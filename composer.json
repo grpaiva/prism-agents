@@ -1,0 +1,58 @@
+{
+    "name": "grpaiva/prism-agents",
+    "description": "Adds agents abstraction to Prism along with tracing",
+    "keywords": [
+        "grpaiva",
+        "prism-agents"
+    ],
+    "homepage": "https://github.com/grpaiva/prism-agents",
+    "license": "MIT",
+    "type": "library",
+    "authors": [
+        {
+            "name": "Gustavo Paiva",
+            "email": "gustavorpaiva@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "laravel/framework": "^11.0|^12.0",
+        "prism-php/prism": "^0.61.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "pestphp/pest": "^3.8.1",
+        "mockery/mockery": "^1.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Grpaiva\\PrismAgents\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Grpaiva\\PrismAgents\\Tests\\": "tests"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Grpaiva\\PrismAgents\\PrismAgentsServiceProvider"
+            ],
+            "aliases": {
+                "PrismAgents": "Grpaiva\\PrismAgents\\Facades\\PrismAgents"
+            }
+        }
+    }
+}
