@@ -2,9 +2,7 @@
 
 namespace Grpaiva\PrismAgents;
 
-use Prism\Prism\Prism;
 use Prism\Prism\Enums\Provider;
-use Illuminate\Support\Collection;
 
 class Agent
 {
@@ -159,15 +157,15 @@ class Agent
 
     /**
      * Create a tool representation of this agent
-     * 
-     * @return Tool
+     *
+     * @return \Prism\Prism\Tool
      */
-    public function asTool(): Tool
+    public function asTool(): \Prism\Prism\Tool
     {
         $toolName = $this->name;
         $toolDescription = $this->handoffDescription ?? "Agent: {$this->name}";
         
-        return Tool::as($toolName)
+        return \Prism\Prism\Facades\Tool::as($toolName)
             ->for($toolDescription)
             ->withStringParameter('input', 'Input for the agent', true)
             ->using(function (string $input) {

@@ -52,7 +52,7 @@ echo $result->getOutput();
 ```php
 use Grpaiva\PrismAgents\Agent;
 use Grpaiva\PrismAgents\PrismAgents;
-use Grpaiva\PrismAgents\Tool;
+use Prism\Prism\Tool;
 use Prism\Prism\Enums\Provider;
 
 // Create a weather tool using the builder pattern

@@ -2,8 +2,8 @@
 
 use Grpaiva\PrismAgents\Agent;
 use Grpaiva\PrismAgents\PrismAgents;
-use Grpaiva\PrismAgents\Tool;
 use Prism\Prism\Enums\Provider;
+use Prism\Prism\Facades\Tool;
 
 require_once __DIR__ . '/../vendor/autoload.php';
 

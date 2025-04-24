@@ -57,7 +57,7 @@ class PrismAgents
      */
     public static function tool(string $name, string $description, Closure $handler, ?array $parameters = null): Tool
     {
-        $tool = Tool::as($name)->for($description)->using($handler);
+        $tool = \Prism\Prism\Facades\Tool::as($name)->for($description)->using($handler);
         
         // If parameters are provided, add them to the tool
         if ($parameters !== null && isset($parameters['properties'])) {
