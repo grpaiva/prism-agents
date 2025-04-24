@@ -6,6 +6,8 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
+use Grpaiva\PrismAgents\Models\AgentTrace;
+use Grpaiva\PrismAgents\Models\AgentSpan;
 
 class Trace
 {
@@ -45,18 +47,18 @@ class Trace
     protected ?string $connection;
 
     /**
-     * The table name to store traces in
-     *
-     * @var string
-     */
-    protected string $table;
-
-    /**
      * Optional trace name
      * 
      * @var string|null
      */
     protected ?string $name = null;
+
+    /**
+     * The AgentTrace model instance
+     *
+     * @var AgentTrace|null
+     */
+    protected ?AgentTrace $traceModel = null;
 
     /**
      * Protected constructor to enforce use of static factory methods
@@ -65,7 +67,15 @@ class Trace
      */
     protected function __construct(?string $traceId = null)
     {
-        $this->traceId = $traceId ?? Str::uuid()->toString();
+        // If a trace ID is provided without the trace_ prefix, add it
+        if ($traceId && strpos($traceId, 'trace_') !== 0) {
+            $traceId = 'trace_' . $traceId;
+        } else if (!$traceId) {
+            // Generate a new trace ID with the correct format
+            $traceId = 'trace_' . Str::uuid()->toString();
+        }
+        
+        $this->traceId = $traceId;
         
         // Load configuration
         $this->enabled = Config::get('prism-agents.tracing.enabled', true);
@@ -73,77 +83,87 @@ class Trace
         // If no specific connection is provided, use the default database connection
         $this->connection = Config::get('prism-agents.tracing.connection') ?: config('database.default');
         
-        $this->table = Config::get('prism-agents.tracing.table', 'prism_agent_traces');
-        
-        // Log the current tracing configuration for debugging
-        \Illuminate\Support\Facades\Log::debug('Trace configuration', [
-            'trace_id' => $this->traceId,
-            'enabled' => $this->enabled,
-            'connection' => $this->connection,
-            'table' => $this->table
-        ]);
-        
         // Verify table existence
         $this->verifyTraceTable();
+        
+        // Try to load or create the trace model
+        $this->initTraceModel();
     }
 
     /**
-     * Verify if the trace table exists in the database
+     * Verify if the trace tables exist in the database
      * 
      * @return bool
      */
     protected function verifyTraceTable(): bool
     {
         try {
-            if (!$this->enabled) {
-                return false;
-            }
-            
-            // Check if the table exists
-            $schema = DB::connection($this->connection)->getSchemaBuilder();
-            
-            $tableExists = $schema->hasTable($this->table);
-            
-            if (!$tableExists) {
-                \Illuminate\Support\Facades\Log::warning("Tracing table '{$this->table}' does not exist. Please run migrations.", [
-                    'connection' => $this->connection,
-                    'table' => $this->table
-                ]);
+            $tracesExist = DB::connection($this->connection)
+                ->getSchemaBuilder()
+                ->hasTable('prism_agent_traces');
                 
-                // Disable tracing if the table doesn't exist
+            $spansExist = DB::connection($this->connection)
+                ->getSchemaBuilder()
+                ->hasTable('prism_agent_spans');
+                
+            if (!$tracesExist || !$spansExist) {
+                \Illuminate\Support\Facades\Log::warning('Trace tables do not exist in the database. Tracing will be disabled.', [
+                    'traces_exist' => $tracesExist,
+                    'spans_exist' => $spansExist,
+                    'connection' => $this->connection
+                ]);
                 $this->enabled = false;
                 return false;
             }
             
-            // For more detailed verification, we could check the columns too:
-            /*
-            $columns = $schema->getColumnListing($this->table);
-            $requiredColumns = ['id', 'trace_id', 'parent_id', 'name', 'type', 'started_at', 'ended_at', 'metadata'];
-            
-            $missingColumns = array_diff($requiredColumns, $columns);
-            if (!empty($missingColumns)) {
-                \Illuminate\Support\Facades\Log::warning("Tracing table '{$this->table}' is missing columns: " . implode(', ', $missingColumns), [
-                    'connection' => $this->connection,
-                    'table' => $this->table,
-                    'existing_columns' => $columns,
-                    'required_columns' => $requiredColumns
-                ]);
-                
-                // Don't disable tracing but log the issue
-            }
-            */
-            
             return true;
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error("Error verifying trace table: " . $e->getMessage(), [
+            \Illuminate\Support\Facades\Log::error("Error verifying trace tables: " . $e->getMessage(), [
                 'connection' => $this->connection,
-                'table' => $this->table,
                 'exception' => $e
             ]);
             
             // Disable tracing on error
             $this->enabled = false;
             return false;
+        }
+    }
+
+    /**
+     * Initialize the trace model
+     * 
+     * @return void
+     */
+    protected function initTraceModel(): void
+    {
+        if (!$this->enabled) {
+            return;
+        }
+        
+        try {
+            // Try to find existing trace
+            $this->traceModel = AgentTrace::findTrace($this->traceId);
+            
+            // If not found, create a new one
+            if (!$this->traceModel) {
+                $this->traceModel = new AgentTrace([
+                    'id' => $this->traceId,
+                    'created_at' => now(),
+                    'workflow_name' => $this->name,
+                ]);
+                
+                if ($this->connection) {
+                    $this->traceModel->setConnection($this->connection);
+                }
+                
+                $this->traceModel->save();
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Error initializing trace model: " . $e->getMessage(), [
+                'trace_id' => $this->traceId,
+                'exception' => $e
+            ]);
+            $this->enabled = false;
         }
     }
 
@@ -158,7 +178,12 @@ class Trace
         $instance = new static();
         if ($name) {
             $instance->name = $name;
-            $instance->traceId = $name; // Use the name as the trace ID for easier retrieval
+            
+            // Update the trace model with the name
+            if ($instance->traceModel) {
+                $instance->traceModel->workflow_name = $name;
+                $instance->traceModel->save();
+            }
         }
         return $instance;
     }
@@ -171,41 +196,41 @@ class Trace
      */
     public static function retrieve(string $nameOrId): ?static
     {
-        $instance = new static($nameOrId);
+        $trace = new static($nameOrId);
         
-        // Attempt to load spans from the database based on the provided ID
-        // This is simplified - in a real implementation, you'd load spans from DB
-        try {
-            $spans = DB::connection($instance->connection)
-                ->table($instance->table)
-                ->where('trace_id', $nameOrId)
-                ->orderBy('started_at')
-                ->get()
-                ->map(function ($row) {
-                    return [
-                        'id' => $row->id,
-                        'trace_id' => $row->trace_id,
-                        'parent_id' => $row->parent_id,
-                        'name' => $row->name,
-                        'type' => $row->type,
-                        'started_at' => new Carbon($row->started_at),
-                        'ended_at' => $row->ended_at ? new Carbon($row->ended_at) : null,
-                        'duration' => $row->duration,
-                        'metadata' => json_decode($row->metadata, true) ?? [],
-                    ];
-                })
-                ->toArray();
-                
-            if (empty($spans)) {
+        // If we couldn't initialize the trace model, this trace doesn't exist
+        if (!$trace->traceModel) {
+            // Try to find by workflow_name
+            $traceModel = AgentTrace::where('workflow_name', $nameOrId)->first();
+            if (!$traceModel) {
                 return null;
             }
             
-            // Populate the instance with the loaded spans
+            // Create a new instance with the found trace ID
+            $trace = new static($traceModel->id);
+        }
+        
+        // Load the spans from the database
+        try {
+            $spans = AgentSpan::where('trace_id', $trace->traceId)
+                ->orderBy('started_at')
+                ->get();
+                
             foreach ($spans as $span) {
-                $instance->spans[$span['id']] = $span;
+                $trace->spans[$span->id] = [
+                    'id' => $span->id,
+                    'trace_id' => $span->trace_id,
+                    'parent_id' => $span->parent_id,
+                    'name' => $span->agent_name,
+                    'type' => $span->span_type,
+                    'started_at' => $span->started_at,
+                    'ended_at' => $span->ended_at,
+                    'duration' => $span->duration_ms,
+                    'metadata' => $span->span_data ?? [],
+                ];
             }
             
-            return $instance;
+            return $trace;
         } catch (\Exception $e) {
             report($e);
             return null;
@@ -220,162 +245,259 @@ class Trace
      */
     public function addResult(AgentResult $result): self
     {
-        // Get information from the result
-        $agent = $result->getAgent();
-        $metadata = $result->getMetadata() ?? [];
-        
-        // Extract system message information
-        $systemMessage = $metadata['system_message'] ?? null;
-        
-        // Start a span for the agent execution
-        $spanId = $this->startSpan(
-            $agent ? $agent->getName() : 'unknown_agent',
-            'agent_execution',
-            [
-                'agent' => $agent ? $agent->getName() : 'unknown',
-                'provider' => $metadata['provider'] ?? null,
-                'model' => $metadata['model'] ?? null,
-                'input' => $result->getInput(),
-                'metadata' => $metadata,
-                'steps' => $result->getSteps(),
-                'tool_calls' => $result->getToolResults(),
-                'system_message' => $systemMessage,
-            ]
-        );
-        
-        // Store agent tools for later use in identifying handoffs
-        $agentTools = [];
-        if (isset($metadata['tools']) && is_array($metadata['tools'])) {
-            $agentTools = array_map(function($tool) {
-                return $tool['name'] ?? null;
-            }, $metadata['tools']);
-            $agentTools = array_filter($agentTools);
-        }
-        
-        // Add spans for each step if available
-        $steps = $result->getSteps();
-        if (!empty($steps)) {
-            $stepIndex = 0;
-            foreach ($steps as $step) {
-                $stepSpanId = $this->startSpan(
-                    "step_" . $stepIndex,
-                    'llm_step',
-                    [
-                        'step_index' => $stepIndex,
-                        'agent' => $agent ? $agent->getName() : 'unknown',
-                        'text' => $step['text'] ?? '',
-                        'finish_reason' => $step['finish_reason'] ?? null,
-                        'tools' => !empty($step['tool_calls']) ? array_map(fn($tc) => $tc->name ?? $tc->toolName ?? 'unknown', $step['tool_calls']) : [],
-                        'additional_content' => $step['additional_content'] ?? [],
-                    ]
-                );
-                
-                // If there are tool results in this step, create subspans for them
-                if (!empty($step['tool_results'])) {
-                    foreach ($step['tool_results'] as $toolIdx => $toolResult) {
-                        $toolName = $toolResult->toolName ?? 'unknown_tool';
-                        
-                        // Determine if this is an agent-as-tool call (handoff)
-                        // We can check this based on tool name matching an agent name pattern
-                        // or by checking if the metadata contains agent-specific data
-                        $isAgentTool = false;
-                        
-                        // Check if the tool name matches an agent name from our pre-processed list
-                        if (!empty($agentTools)) {
-                            $isAgentTool = in_array($toolName, $agentTools);
-                        }
-                        
-                        // Default to checking if the tool name matches an agent name pattern
-                        // This is a heuristic approach since we don't have direct agent reference
-                        if (!$isAgentTool) {
-                            $isAgentTool = str_contains($toolName, '_agent') || 
-                                           str_contains($toolName, 'Agent') || 
-                                           isset($toolResult->result) && (
-                                               is_string($toolResult->result) && 
-                                               strlen($toolResult->result) > 20
-                                           );
-                        }
-                        
-                        $spanType = $isAgentTool ? 'handoff' : 'tool_call';
-                        
-                        $toolSpanId = $this->startSpan(
-                            "tool_" . $toolName . "_" . $toolIdx,
-                            $spanType,
-                            [
-                                'tool_name' => $toolName,
-                                'args' => $toolResult->args ?? [],
-                                'result' => $toolResult->result ?? null,
-                            ]
-                        );
-                        $this->endSpan($toolSpanId);
-                    }
-                }
-                
-                $this->endSpan($stepSpanId);
-                $stepIndex++;
-            }
+        if (!$this->enabled) {
+            return $this;
         }
 
-        // End the main agent execution span
-        $this->endSpan($spanId, [
-            'output' => $result->getOutput(),
-            'status' => $result->isSuccess() ? 'success' : 'error',
-            'error' => $result->getError(),
+        // Create a root span for the agent execution
+        $spanId = $this->startSpan($result->getAgent()->getName(), 'agent_execution');
+        
+        // Add metadata about the agent
+        $this->updateSpan($spanId, [
+            'agent' => $result->getAgent()->getName(),
+            'provider' => $result->getProvider(),
+            'model' => $result->getModel(),
+            'input' => $result->getInput(),
             'metadata' => $result->getMetadata(),
+            'steps' => $result->getSteps(),
+            'tool_calls' => $result->getAllToolCalls(),
+            'system_message' => $result->getSystemMessage(),
+            'output' => $result->getOutput(),
+            'status' => $result->isSuccessful() ? 'success' : 'error',
+            'error' => $result->getError(),
         ]);
-
+        
+        // Add step spans
+        foreach ($result->getSteps() as $index => $step) {
+            $stepSpanId = $this->startSpan("step_{$index}", 'llm_step', $spanId);
+            $this->updateSpan($stepSpanId, [
+                'step_index' => $index,
+                'agent' => $result->getAgent()->getName(),
+                'text' => $step['text'],
+                'finish_reason' => $step['finish_reason'],
+                'tools' => collect($step['tool_calls'])->pluck('name')->unique()->values()->toArray(),
+                'additional_content' => $step['additional_content'],
+            ]);
+            
+            // Add tool call spans
+            foreach ($step['tool_results'] as $toolIdx => $toolResult) {
+                $toolSpanId = $this->startSpan("tool_{$toolResult['toolName']}_{$toolIdx}", 'handoff', $stepSpanId);
+                $this->updateSpan($toolSpanId, [
+                    'tool_name' => $toolResult['toolName'],
+                    'args' => $toolResult['args'],
+                    'result' => $toolResult['result'],
+                ]);
+                
+                $this->endSpan($toolSpanId);
+            }
+            
+            $this->endSpan($stepSpanId);
+        }
+        
+        // End the root span
+        $this->endSpan($spanId);
+        
+        // Update the trace model with statistics
+        if ($this->traceModel) {
+            $this->traceModel->calculateCounts();
+            $this->traceModel->calculateDuration();
+            $this->traceModel->save();
+        }
+        
         return $this;
     }
 
     /**
-     * Start a new span
+     * Start a new span in the trace
      *
-     * @param string $name
-     * @param string $type
-     * @param array $metadata
-     * @return string The span ID
+     * @param string $name The name of the span
+     * @param string $type The type of span
+     * @param string|null $parentId Optional parent span ID
+     * @param array $metadata Optional metadata to include
+     * @return string The ID of the new span
      */
-    public function startSpan(string $name, string $type, array $metadata = []): string
+    public function startSpan(string $name, string $type, ?string $parentId = null, array $metadata = []): string
     {
-        $spanId = Str::uuid()->toString();
-        $parentSpanId = empty($this->activeSpans) ? null : end($this->activeSpans);
+        if (!$this->enabled) {
+            return 'disabled';
+        }
+
+        // First, create a model
+        $now = Carbon::now();
+        $spanId = 'span_' . substr(Str::uuid()->toString(), 0, 24);
         
-        $span = [
-            'id' => $spanId,
-            'trace_id' => $this->traceId,
-            'parent_id' => $parentSpanId,
-            'name' => $name,
-            'type' => $type,
-            'started_at' => Carbon::now(),
-            'metadata' => $metadata,
-        ];
+        // Determine span type and data structure
+        $spanData = ['type' => 'function']; // Default to function type
         
-        $this->spans[$spanId] = $span;
-        $this->activeSpans[] = $spanId;
-        
-        if ($this->enabled) {
-            $this->saveSpan($span);
+        switch ($type) {
+            case 'agent_execution':
+            case 'agent_run':
+                $spanData = [
+                    'type' => 'agent',
+                    'name' => $name,
+                    'output_type' => 'str',
+                    'tools' => [],
+                    'handoffs' => []
+                ];
+                break;
+                
+            case 'handoff':
+                $spanData = [
+                    'type' => 'handoff',
+                    'from_agent' => $metadata['from_agent'] ?? null,
+                    'to_agent' => $metadata['to_agent'] ?? $name
+                ];
+                break;
+                
+            case 'tool_call':
+                $spanData = [
+                    'type' => 'function',
+                    'name' => $name,
+                    'input' => $metadata['args'] ?? null,
+                    'output' => $metadata['result'] ?? null,
+                ];
+                break;
+                
+            case 'llm_step':
+                $spanData = [
+                    'type' => 'response',
+                    'response_id' => 'resp_' . substr(md5($spanId), 0, 40),
+                ];
+                break;
+                
+            default:
+                // Handle other types
+                $spanData['name'] = $name;
         }
         
-        return $spanId;
+        // Save to database
+        try {
+            $span = new AgentSpan([
+                'id' => $spanId,
+                'trace_id' => $this->traceId,
+                'parent_id' => $parentId,
+                'span_data' => $spanData,
+                'started_at' => $now,
+                'created_at' => $now,
+            ]);
+            
+            if ($this->connection) {
+                $span->setConnection($this->connection);
+            }
+            
+            $span->save();
+            
+            // Keep track of span in memory
+            $this->spans[$spanId] = [
+                'id' => $spanId,
+                'trace_id' => $this->traceId,
+                'parent_id' => $parentId,
+                'name' => $name,
+                'type' => $type,
+                'started_at' => $now,
+                'ended_at' => null,
+                'duration' => null,
+                'metadata' => $metadata,
+            ];
+            
+            // Add to active spans
+            $this->activeSpans[] = $spanId;
+            
+            return $spanId;
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error creating span: ' . $e->getMessage(), [
+                'name' => $name,
+                'type' => $type,
+                'parent_id' => $parentId,
+                'exception' => $e
+            ]);
+            
+            return 'error_' . Str::uuid()->toString();
+        }
+    }
+
+    /**
+     * Update an existing span with additional metadata
+     *
+     * @param string $spanId The ID of the span to update
+     * @param array $metadata The metadata to add to the span
+     * @return $this
+     */
+    public function updateSpan(string $spanId, array $metadata = []): self
+    {
+        if (!$this->enabled || !isset($this->spans[$spanId])) {
+            return $this;
+        }
+        
+        // Update in-memory span data
+        $this->spans[$spanId]['metadata'] = array_merge(
+            $this->spans[$spanId]['metadata'] ?? [], 
+            $metadata
+        );
+        
+        // Update span in database
+        try {
+            $span = AgentSpan::find($spanId);
+            if ($span) {
+                // Update span data based on span type
+                if ($span->isAgentSpan()) {
+                    // For agent spans, update tools and handoffs if present
+                    $spanData = $span->span_data;
+                    
+                    // Extract tools from metadata
+                    if (!empty($metadata['tool_calls'])) {
+                        $spanData['tools'] = collect($metadata['tool_calls'])
+                            ->pluck('toolName')
+                            ->unique()
+                            ->values()
+                            ->toArray();
+                    }
+                    
+                    // Update span data
+                    $span->span_data = $spanData;
+                } 
+                else if ($span->isFunctionSpan()) {
+                    // Update function input/output if applicable
+                    $spanData = $span->span_data;
+                    if (isset($metadata['args'])) {
+                        $spanData['input'] = json_encode($metadata['args']);
+                    }
+                    if (isset($metadata['result'])) {
+                        $spanData['output'] = $this->truncateText($metadata['result']);
+                    }
+                    $span->span_data = $spanData;
+                }
+                
+                $span->save();
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error updating span: ' . $e->getMessage(), [
+                'trace_id' => $this->traceId,
+                'span_id' => $spanId,
+                'exception' => $e
+            ]);
+        }
+        
+        return $this;
     }
 
     /**
      * End a span
      *
-     * @param string $spanId
-     * @param array $metadata
+     * @param string $spanId The ID of the span to end
+     * @param array $metadata Additional metadata to include
      * @return $this
      */
     public function endSpan(string $spanId, array $metadata = []): self
     {
-        if (!isset($this->spans[$spanId])) {
+        if (!$this->enabled || !isset($this->spans[$spanId])) {
             return $this;
         }
         
+        $now = Carbon::now();
         $span = &$this->spans[$spanId];
-        $span['ended_at'] = Carbon::now();
-        $span['duration'] = $span['ended_at']->diffInMilliseconds($span['started_at']);
+        $span['ended_at'] = $now;
+        $span['duration'] = $now->diffInMilliseconds($span['started_at']);
         $span['metadata'] = array_merge($span['metadata'] ?? [], $metadata);
         
         // Remove from active spans
@@ -384,8 +506,31 @@ class Trace
             array_splice($this->activeSpans, $index, 1);
         }
         
-        if ($this->enabled) {
-            $this->updateSpan($span);
+        // Update span in database
+        try {
+            $spanModel = AgentSpan::find($spanId);
+            if ($spanModel) {
+                $spanModel->ended_at = $now;
+                $spanModel->duration_ms = $span['duration'];
+                
+                // Handle error information if present
+                if (isset($metadata['error'])) {
+                    $spanModel->error = [
+                        'message' => $metadata['error'],
+                        'data' => [
+                            'error' => $metadata['error_message'] ?? $metadata['error']
+                        ]
+                    ];
+                }
+                
+                $spanModel->save();
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error ending span: ' . $e->getMessage(), [
+                'trace_id' => $this->traceId,
+                'span_id' => $spanId,
+                'exception' => $e
+            ]);
         }
         
         return $this;
@@ -412,223 +557,15 @@ class Trace
     public function withConnection(string $connection): self
     {
         $this->connection = $connection;
+        
+        // Update trace model connection if it exists
+        if ($this->traceModel) {
+            $this->traceModel->setConnection($connection);
+        }
+        
         return $this;
     }
 
-    /**
-     * Configure table name
-     * 
-     * @param string $table
-     * @return $this
-     */
-    public function withTable(string $table): self
-    {
-        $this->table = $table;
-        return $this;
-    }
-
-    /**
-     * Save a span to the database
-     *
-     * @param array $span
-     * @return void
-     */
-    protected function saveSpan(array $span): void
-    {
-        if (!$this->enabled) {
-            return;
-        }
-        
-        try {
-            // Check which columns exist in the table
-            $schema = DB::connection($this->connection)->getSchemaBuilder();
-            $columns = $schema->getColumnListing($this->table);
-            
-            $metadata = $span['metadata'] ?? [];
-            
-            // Start with essential columns that should always exist
-            $data = [
-                'id' => $span['id'],
-                'trace_id' => $span['trace_id'],
-                'parent_id' => $span['parent_id'],
-                'name' => $span['name'],
-                'type' => $span['type'],
-                'metadata' => json_encode($metadata),
-            ];
-            
-            // For SQLite, ensure timestamps are formatted as strings
-            if (in_array('started_at', $columns)) {
-                $data['started_at'] = $span['started_at'] instanceof Carbon 
-                    ? $span['started_at']->toDateTimeString() 
-                    : $span['started_at'];
-            }
-            
-            if (in_array('ended_at', $columns) && isset($span['ended_at'])) {
-                $data['ended_at'] = $span['ended_at'] instanceof Carbon 
-                    ? $span['ended_at']->toDateTimeString() 
-                    : $span['ended_at'];
-            }
-            
-            if (in_array('duration', $columns) && isset($span['duration'])) {
-                $data['duration'] = $span['duration'];
-            }
-            
-            // Add standard Laravel timestamps if they exist
-            if (in_array('created_at', $columns)) {
-                $data['created_at'] = Carbon::now()->toDateTimeString();
-            }
-            
-            if (in_array('updated_at', $columns)) {
-                $data['updated_at'] = Carbon::now()->toDateTimeString();
-            }
-            
-            // Only add extended columns if they exist in the table
-            $extendedColumns = [
-                'agent_name' => $metadata['agent'] ?? null,
-                'provider' => $metadata['provider'] ?? null,
-                'model' => $metadata['model'] ?? null,
-                'input_text' => $this->truncateText($metadata['input'] ?? null),
-                'output_text' => $this->truncateText($metadata['output'] ?? null),
-                'status' => $metadata['status'] ?? null,
-                'error_message' => $this->truncateText($metadata['error'] ?? null),
-                'tokens_used' => $metadata['metadata']['usage']['total_tokens'] ?? null,
-                'step_count' => isset($metadata['steps']) ? count($metadata['steps']) : null,
-                'tool_call_count' => isset($metadata['tool_calls']) ? count($metadata['tool_calls']) : null,
-            ];
-            
-            foreach ($extendedColumns as $column => $value) {
-                if (in_array($column, $columns)) {
-                    $data[$column] = $value;
-                }
-            }
-            
-            // Log data for debugging
-            \Illuminate\Support\Facades\Log::debug('Saving span to database', [
-                'trace_id' => $span['trace_id'],
-                'span_id' => $span['id'],
-                'table' => $this->table,
-                'connection' => $this->connection,
-                'columns' => $columns,
-                'data_keys' => array_keys($data)
-            ]);
-            
-            // Wrap in a transaction to ensure data consistency
-            $result = DB::connection($this->connection)->transaction(function () use ($data) {
-                return DB::connection($this->connection)->table($this->table)->insert($data);
-            });
-            
-            if (!$result) {
-                \Illuminate\Support\Facades\Log::error('Failed to insert span', [
-                    'trace_id' => $span['trace_id'],
-                    'span_id' => $span['id'],
-                ]);
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Error saving span: ' . $e->getMessage(), [
-                'trace_id' => $span['trace_id'] ?? null,
-                'span_id' => $span['id'] ?? null,
-                'exception' => $e
-            ]);
-        }
-    }
-
-    /**
-     * Update a span in the database
-     *
-     * @param array $span
-     * @return void
-     */
-    protected function updateSpan(array $span): void
-    {
-        if (!$this->enabled) {
-            return;
-        }
-        
-        try {
-            // Check which columns exist in the table
-            $schema = DB::connection($this->connection)->getSchemaBuilder();
-            $columns = $schema->getColumnListing($this->table);
-            
-            $metadata = $span['metadata'] ?? [];
-            
-            // Start with essential columns for updates
-            $data = [
-                'metadata' => json_encode($metadata),
-            ];
-            
-            // For SQLite, ensure timestamps are formatted as strings
-            if (in_array('ended_at', $columns) && isset($span['ended_at'])) {
-                $data['ended_at'] = $span['ended_at'] instanceof Carbon 
-                    ? $span['ended_at']->toDateTimeString() 
-                    : $span['ended_at'];
-            }
-            
-            if (in_array('duration', $columns) && isset($span['duration'])) {
-                $data['duration'] = $span['duration'];
-            }
-            
-            // Add updated_at if it exists
-            if (in_array('updated_at', $columns)) {
-                $data['updated_at'] = Carbon::now()->toDateTimeString();
-            }
-            
-            // Only add extended columns if they exist in the table
-            $extendedColumns = [
-                'output_text' => $this->truncateText($metadata['output'] ?? null),
-                'status' => $metadata['status'] ?? null,
-                'error_message' => $this->truncateText($metadata['error'] ?? null),
-                'tokens_used' => $metadata['metadata']['usage']['total_tokens'] ?? null,
-                'step_count' => isset($metadata['steps']) ? count($metadata['steps']) : null,
-                'tool_call_count' => isset($metadata['tool_calls']) ? count($metadata['tool_calls']) : null,
-            ];
-            
-            foreach ($extendedColumns as $column => $value) {
-                if (in_array($column, $columns)) {
-                    $data[$column] = $value;
-                }
-            }
-            
-            // Log data for debugging
-            \Illuminate\Support\Facades\Log::debug('Updating span in database', [
-                'trace_id' => $span['trace_id'],
-                'span_id' => $span['id'],
-                'table' => $this->table,
-                'connection' => $this->connection,
-                'columns' => $columns,
-                'data_keys' => array_keys($data)
-            ]);
-            
-            // Only proceed if we have data to update
-            if (empty($data)) {
-                \Illuminate\Support\Facades\Log::warning('No updateable columns found for span', [
-                    'trace_id' => $span['trace_id'],
-                    'span_id' => $span['id'],
-                ]);
-                return;
-            }
-            
-            // Wrap in a transaction to ensure data consistency
-            $result = DB::connection($this->connection)->transaction(function () use ($span, $data) {
-                return DB::connection($this->connection)->table($this->table)
-                    ->where('id', $span['id'])
-                    ->update($data);
-            });
-            
-            if ($result === 0) {
-                \Illuminate\Support\Facades\Log::warning('No rows updated for span', [
-                    'trace_id' => $span['trace_id'],
-                    'span_id' => $span['id'],
-                ]);
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Error updating span: ' . $e->getMessage(), [
-                'trace_id' => $span['trace_id'] ?? null,
-                'span_id' => $span['id'] ?? null,
-                'exception' => $e
-            ]);
-        }
-    }
-    
     /**
      * Truncate text to a maximum length for database storage
      * 
@@ -673,7 +610,7 @@ class Trace
      */
     public function getName(): ?string
     {
-        return $this->name;
+        return $this->name ?? $this->traceModel->workflow_name ?? null;
     }
 
     /**
@@ -695,15 +632,5 @@ class Trace
     public function isSpanActive(string $spanId): bool
     {
         return in_array($spanId, $this->activeSpans);
-    }
-
-    /**
-     * Get the current active span ID
-     *
-     * @return string|null
-     */
-    public function getCurrentSpanId(): ?string
-    {
-        return empty($this->activeSpans) ? null : end($this->activeSpans);
     }
 } 

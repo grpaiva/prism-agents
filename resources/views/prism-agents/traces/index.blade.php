@@ -13,10 +13,10 @@
         <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 sm:px-6">
             <div class="flex items-center">
                 <div class="flex-1 min-w-0">
-                    <h3 class="text-sm font-medium text-gray-900">Agent</h3>
+                    <h3 class="text-sm font-medium text-gray-900">Workflow</h3>
                 </div>
                 <div class="ml-2 flex-shrink-0 flex">
-                    <h3 class="text-sm font-medium text-gray-900">Started</h3>
+                    <h3 class="text-sm font-medium text-gray-900">Created</h3>
                 </div>
                 <div class="ml-8 flex-shrink-0 flex">
                     <h3 class="text-sm font-medium text-gray-900">Duration</h3>
@@ -28,74 +28,66 @@
                     <h3 class="text-sm font-medium text-gray-900">Tools</h3>
                 </div>
                 <div class="ml-8 flex-shrink-0 flex">
-                    <h3 class="text-sm font-medium text-gray-900">Status</h3>
+                    <h3 class="text-sm font-medium text-gray-900">Agents</h3>
                 </div>
             </div>
         </div>
         
-        <ul class="divide-y divide-gray-200">
-            @forelse($traces as $trace)
-                <li>
-                    <a href="{{ route('prism-agents.traces.show', $trace->id) }}" class="block hover:bg-gray-50">
-                        <div class="px-4 py-4 sm:px-6">
-                            <div class="flex items-center">
-                                <div class="flex-1 min-w-0">
-                                    <p class="text-sm font-medium text-indigo-600 truncate">
-                                        {{ $trace->name }}
-                                    </p>
-                                    <p class="mt-1 text-xs text-gray-500 truncate">
-                                        {{ $trace->trace_id }}
-                                    </p>
+        @forelse($traces as $trace)
+            <div class="hover:bg-gray-50">
+                <a href="{{ route('prism-agents.traces.show', $trace->id) }}" class="block">
+                    <div class="px-4 py-4 sm:px-6">
+                        <div class="flex items-center">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center">
+                                    <div>
+                                        <p class="text-sm font-medium text-indigo-600 truncate">
+                                            {{ $trace->workflow_name ?? substr($trace->id, 6) }}
+                                        </p>
+                                        <p class="mt-1 text-sm text-gray-500 truncate">
+                                            {{ $trace->id }}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div class="ml-2 flex-shrink-0 flex">
-                                    <p class="text-sm text-gray-500">
-                                        {{ $trace->started_at->format('M j, Y g:i:s A') }}
-                                    </p>
-                                </div>
-                                <div class="ml-8 flex-shrink-0 flex">
-                                    <p class="text-sm text-gray-500">
-                                        {{ $trace->formatted_duration }}
-                                    </p>
-                                </div>
-                                <div class="ml-8 flex-shrink-0 flex">
-                                    <p class="text-sm text-gray-500 text-center w-8">
-                                        {{ $trace->handoff_count ?: 0 }}
-                                    </p>
-                                </div>
-                                <div class="ml-8 flex-shrink-0 flex">
-                                    <p class="text-sm text-gray-500 text-center w-8">
-                                        {{ $trace->tool_call_count ?: 0 }}
-                                    </p>
-                                </div>
-                                <div class="ml-8 flex-shrink-0 flex">
-                                    @php
-                                        $status = $trace->status_value;
-                                    @endphp
-                                    
-                                    @if($status === 'success')
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                                            Success
+                            </div>
+                            <div class="ml-2 flex-shrink-0 flex">
+                                <p class="px-2 text-sm text-gray-700">
+                                    {{ $trace->created_at->diffForHumans() }}
+                                </p>
+                            </div>
+                            <div class="ml-8 flex-shrink-0 flex">
+                                <p class="px-2 text-sm text-gray-700">
+                                    {{ $trace->formatted_duration }}
+                                </p>
+                            </div>
+                            <div class="ml-8 flex-shrink-0 flex">
+                                <p class="px-2 text-sm text-gray-700">
+                                    {{ $trace->handoff_count ?? 'N/A' }}
+                                </p>
+                            </div>
+                            <div class="ml-8 flex-shrink-0 flex">
+                                <p class="px-2 text-sm text-gray-700">
+                                    {{ $trace->tool_count ?? 'N/A' }}
+                                </p>
+                            </div>
+                            <div class="ml-8 flex-shrink-0 flex">
+                                <div class="px-2 text-sm text-gray-700">
+                                    @foreach($trace->first_5_agents as $agent)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-1">
+                                            {{ $agent }}
                                         </span>
-                                    @elseif($status === 'error')
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                                            Error
-                                        </span>
-                                    @else
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                                            {{ ucfirst($status) }}
-                                        </span>
-                                    @endif
+                                    @endforeach
                                 </div>
                             </div>
                         </div>
-                    </a>
-                </li>
-            @empty
-                <li class="px-4 py-5 sm:px-6 text-center text-sm text-gray-500">
-                    No traces found. Run some agent operations to generate traces.
-                </li>
-            @endforelse
-        </ul>
+                    </div>
+                </a>
+            </div>
+        @empty
+            <div class="px-4 py-5 sm:px-6 text-center">
+                <p class="text-gray-500">No traces found</p>
+            </div>
+        @endforelse
         
         <div class="px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
             {{ $traces->links() }}
