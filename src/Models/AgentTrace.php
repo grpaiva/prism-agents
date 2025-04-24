@@ -4,6 +4,7 @@ namespace Grpaiva\PrismAgents\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 
 class AgentTrace extends Model
 {
@@ -85,6 +86,47 @@ class AgentTrace extends Model
     ];
 
     /**
+     * The accessors to append to the model's array form.
+     *
+     * @var array
+     */
+    protected $appends = [
+        'formatted_duration',
+        'status_value',
+    ];
+
+    /**
+     * Default attribute values.
+     * 
+     * @var array
+     */
+    protected $attributes = [
+        'started_at' => null,
+    ];
+
+    /**
+     * Create a new model instance.
+     *
+     * @param array $attributes
+     * @return void
+     */
+    public function __construct(array $attributes = [])
+    {
+        // Set the connection from config immediately
+        if (!$this->getConnectionName()) {
+            $connection = Config::get('prism-agents.tracing.connection') ?: config('database.default');
+            $this->setConnection($connection);
+        }
+
+        // Set default timestamp for started_at if not provided
+        if (!isset($attributes['started_at'])) {
+            $attributes['started_at'] = now();
+        }
+
+        parent::__construct($attributes);
+    }
+
+    /**
      * Boot the model.
      */
     protected static function boot()
@@ -92,10 +134,9 @@ class AgentTrace extends Model
         parent::boot();
 
         static::creating(function ($model) {
-            // Set the connection from config if not already set
-            if (!$model->getConnectionName()) {
-                $connection = Config::get('prism-agents.tracing.connection') ?: config('database.default');
-                $model->setConnection($connection);
+            // Ensure started_at is set when creating
+            if (!$model->started_at) {
+                $model->started_at = now();
             }
         });
     }
@@ -122,6 +163,14 @@ class AgentTrace extends Model
     public function handoffs()
     {
         return $this->children()->where('type', 'handoff');
+    }
+
+    /**
+     * Get tool calls for this trace.
+     */
+    public function toolCalls()
+    {
+        return $this->children()->where('type', 'tool_call');
     }
 
     /**
@@ -169,7 +218,93 @@ class AgentTrace extends Model
      */
     public function getHandoffCountAttribute()
     {
+        // If this is a root trace, count all handoffs in this trace hierarchy
+        if ($this->parent_id === null) {
+            $tableName = $this->getTable();
+            $connection = $this->getConnectionName();
+            
+            // Use a cached value if it exists in the handoff_count column
+            if (isset($this->attributes['handoff_count']) && $this->attributes['handoff_count'] !== null) {
+                return (int) $this->attributes['handoff_count'];
+            }
+            
+            // Use a recursive query to find all descendants of this trace
+            $descendants = $this->getAllDescendantIds();
+            
+            // Count handoffs among descendants
+            return DB::connection($connection)->table($tableName)
+                ->whereIn('id', $descendants)
+                ->where('type', 'handoff')
+                ->count();
+        }
+        
+        // Otherwise just count direct handoffs
         return $this->handoffs()->count();
+    }
+
+    /**
+     * Get the count of tool calls for this trace.
+     */
+    public function getToolCallCountAttribute()
+    {
+        // If the value is already set in the database, return it
+        if (isset($this->attributes['tool_call_count']) && $this->attributes['tool_call_count'] !== null) {
+            return (int) $this->attributes['tool_call_count'];
+        }
+        
+        // If this is a root trace, count all tool calls in this trace hierarchy
+        if ($this->parent_id === null) {
+            $tableName = $this->getTable();
+            $connection = $this->getConnectionName();
+            
+            // Use a recursive query to find all descendants of this trace
+            $descendants = $this->getAllDescendantIds();
+            
+            // Count tool calls among descendants
+            return DB::connection($connection)->table($tableName)
+                ->whereIn('id', $descendants)
+                ->where('type', 'tool_call')
+                ->count();
+        }
+        
+        // Otherwise just count direct tool calls
+        return $this->toolCalls()->count();
+    }
+
+    /**
+     * Helper method to get all descendant IDs recursively.
+     * 
+     * @return array
+     */
+    private function getAllDescendantIds()
+    {
+        $tableName = $this->getTable();
+        $connection = $this->getConnectionName();
+        $traceId = $this->id;
+        
+        // Start with direct children
+        $descendants = DB::connection($connection)->table($tableName)
+            ->where('parent_id', $traceId)
+            ->pluck('id')
+            ->toArray();
+            
+        // Add indirect descendants recursively
+        $newDescendants = $descendants;
+        while (!empty($newDescendants)) {
+            $nextLevel = DB::connection($connection)->table($tableName)
+                ->whereIn('parent_id', $newDescendants)
+                ->pluck('id')
+                ->toArray();
+                
+            if (empty($nextLevel)) {
+                break;
+            }
+            
+            $descendants = array_merge($descendants, $nextLevel);
+            $newDescendants = $nextLevel;
+        }
+        
+        return $descendants;
     }
 
     /**

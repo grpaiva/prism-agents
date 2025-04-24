@@ -22,6 +22,12 @@
                     <h3 class="text-sm font-medium text-gray-900">Duration</h3>
                 </div>
                 <div class="ml-8 flex-shrink-0 flex">
+                    <h3 class="text-sm font-medium text-gray-900">Handoffs</h3>
+                </div>
+                <div class="ml-8 flex-shrink-0 flex">
+                    <h3 class="text-sm font-medium text-gray-900">Tools</h3>
+                </div>
+                <div class="ml-8 flex-shrink-0 flex">
                     <h3 class="text-sm font-medium text-gray-900">Status</h3>
                 </div>
             </div>
@@ -49,6 +55,16 @@
                                 <div class="ml-8 flex-shrink-0 flex">
                                     <p class="text-sm text-gray-500">
                                         {{ $trace->formatted_duration }}
+                                    </p>
+                                </div>
+                                <div class="ml-8 flex-shrink-0 flex">
+                                    <p class="text-sm text-gray-500 text-center w-8">
+                                        {{ $trace->handoff_count ?: 0 }}
+                                    </p>
+                                </div>
+                                <div class="ml-8 flex-shrink-0 flex">
+                                    <p class="text-sm text-gray-500 text-center w-8">
+                                        {{ $trace->tool_call_count ?: 0 }}
                                     </p>
                                 </div>
                                 <div class="ml-8 flex-shrink-0 flex">

@@ -8,9 +8,12 @@ use Orchestra\Testbench\TestCase as Orchestra;
 use Mockery as m;
 use Prism\Prism\PrismManager;
 use Prism\Prism\Providers\OpenAI\OpenAI;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class TestCase extends Orchestra
 {
+    use RefreshDatabase;
+
     protected function getPackageProviders($app)
     {
         return [
@@ -64,11 +67,38 @@ class TestCase extends Orchestra
         $this->app->instance(PrismManager::class, $prismManager);
     }
 
-    protected function getEnvironmentSetUp($app): void
+    /**
+     * Define database migrations.
+     *
+     * @return void
+     */
+    protected function defineDatabaseMigrations()
     {
-        // Setup default database to use sqlite :memory:
+        // Run the package migration
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+        
+        // Migration to create the required table for tests
+        $this->artisan('migrate', ['--database' => 'testbench'])->run();
+    }
+
+    /**
+     * Define environment setup.
+     *
+     * @param  \Illuminate\Foundation\Application  $app
+     * @return void
+     */
+    protected function getEnvironmentSetUp($app)
+    {
+        // Setup default database to use in-memory sqlite
         $app['config']->set('database.default', 'testbench');
         $app['config']->set('database.connections.testbench', [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ]);
+        
+        // Set up a dummy connection for connection tests
+        $app['config']->set('database.connections.testdb', [
             'driver'   => 'sqlite',
             'database' => ':memory:',
             'prefix'   => '',

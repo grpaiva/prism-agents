@@ -6,6 +6,7 @@ use Grpaiva\PrismAgents\Models\AgentTrace;
 use Grpaiva\PrismAgents\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 
 class AgentTraceTest extends TestCase
 {
@@ -34,8 +35,9 @@ class AgentTraceTest extends TestCase
 
         $trace = new AgentTrace();
         $trace->id = 'test-id';
-        $trace->saveQuietly();
-
+        
+        // Just test that the model is using the correct connection name
+        // without actually trying to save it to the database
         $this->assertEquals('testdb', $trace->getConnectionName());
 
         // Clean up
@@ -154,11 +156,199 @@ class AgentTraceTest extends TestCase
         $this->assertTrue($step->hasHandoffs());
         $this->assertEquals(2, $step->handoff_count);
         
+        // Test tool calls relationship
+        $this->assertCount(1, $step->toolCalls);
+        $this->assertEquals(1, $step->tool_call_count);
+        
         // Verify the handoffs are the right ones
         $handoffIds = $step->handoffs->pluck('id')->toArray();
         $this->assertContains('handoff-1', $handoffIds);
         $this->assertContains('handoff-2', $handoffIds);
         $this->assertNotContains('other-child', $handoffIds);
+    }
+
+    public function test_root_trace_handoff_and_tool_count()
+    {
+        // Create a root trace
+        $root = new AgentTrace([
+            'id' => 'root-trace',
+            'trace_id' => 'trace-counts',
+            'name' => 'Root Trace',
+            'type' => 'agent_execution',
+        ]);
+        $root->saveQuietly();
+
+        // Create child traces - step
+        $step = new AgentTrace([
+            'id' => 'step-trace',
+            'trace_id' => 'trace-counts',
+            'parent_id' => 'root-trace',
+            'name' => 'step_0',
+            'type' => 'llm_step',
+        ]);
+        $step->saveQuietly();
+
+        // Create handoffs under the step
+        $handoff1 = new AgentTrace([
+            'id' => 'handoff-1',
+            'trace_id' => 'trace-counts',
+            'parent_id' => 'step-trace',
+            'name' => 'handoff_1',
+            'type' => 'handoff',
+        ]);
+        $handoff1->saveQuietly();
+
+        $handoff2 = new AgentTrace([
+            'id' => 'handoff-2',
+            'trace_id' => 'trace-counts',
+            'parent_id' => 'step-trace',
+            'name' => 'handoff_2',
+            'type' => 'handoff',
+        ]);
+        $handoff2->saveQuietly();
+
+        // Create tool call under the step
+        $toolCall = new AgentTrace([
+            'id' => 'tool-call-1',
+            'trace_id' => 'trace-counts',
+            'parent_id' => 'step-trace',
+            'name' => 'tool_call_1',
+            'type' => 'tool_call',
+        ]);
+        $toolCall->saveQuietly();
+
+        // Create an unrelated root trace with same trace_id
+        $unrelatedRoot = new AgentTrace([
+            'id' => 'unrelated-root',
+            'trace_id' => 'trace-counts', // Same trace_id
+            'name' => 'Unrelated Root',
+            'type' => 'agent_execution',
+        ]);
+        $unrelatedRoot->saveQuietly();
+
+        // Create an unrelated handoff and tool call
+        $unrelatedHandoff = new AgentTrace([
+            'id' => 'unrelated-handoff',
+            'trace_id' => 'trace-counts',
+            'parent_id' => 'unrelated-root',
+            'name' => 'unrelated_handoff',
+            'type' => 'handoff',
+        ]);
+        $unrelatedHandoff->saveQuietly();
+
+        $unrelatedToolCall = new AgentTrace([
+            'id' => 'unrelated-tool-call',
+            'trace_id' => 'trace-counts',
+            'parent_id' => 'unrelated-root',
+            'name' => 'unrelated_tool_call',
+            'type' => 'tool_call',
+        ]);
+        $unrelatedToolCall->saveQuietly();
+
+        // Refresh the root trace
+        $root = $root->fresh();
+
+        // Test that the root trace counts include only its descendants
+        $this->assertEquals(2, $root->handoff_count);
+        $this->assertEquals(1, $root->tool_call_count);
+
+        // Add another tool call directly under the root
+        $toolCall2 = new AgentTrace([
+            'id' => 'tool-call-2',
+            'trace_id' => 'trace-counts',
+            'parent_id' => 'root-trace',
+            'name' => 'tool_call_2',
+            'type' => 'tool_call',
+        ]);
+        $toolCall2->saveQuietly();
+
+        // Refresh and test again
+        $root = $root->fresh();
+        $this->assertEquals(2, $root->handoff_count);
+        $this->assertEquals(2, $root->tool_call_count);
+
+        // Verify unrelated root only counts its own descendants
+        $unrelatedRoot = $unrelatedRoot->fresh();
+        $this->assertEquals(1, $unrelatedRoot->handoff_count);
+        $this->assertEquals(1, $unrelatedRoot->tool_call_count);
+    }
+
+    public function test_get_all_descendant_ids()
+    {
+        // Create test hierarchy
+        $root = new AgentTrace([
+            'id' => 'root-trace',
+            'trace_id' => 'trace-descendants',
+            'name' => 'Root Trace',
+            'type' => 'agent_execution',
+        ]);
+        $root->saveQuietly();
+
+        $child1 = new AgentTrace([
+            'id' => 'child-1',
+            'trace_id' => 'trace-descendants',
+            'parent_id' => 'root-trace',
+            'name' => 'Child 1',
+            'type' => 'llm_step',
+        ]);
+        $child1->saveQuietly();
+
+        $child2 = new AgentTrace([
+            'id' => 'child-2',
+            'trace_id' => 'trace-descendants',
+            'parent_id' => 'root-trace',
+            'name' => 'Child 2',
+            'type' => 'llm_step',
+        ]);
+        $child2->saveQuietly();
+
+        $grandchild1 = new AgentTrace([
+            'id' => 'grandchild-1',
+            'trace_id' => 'trace-descendants',
+            'parent_id' => 'child-1',
+            'name' => 'Grandchild 1',
+            'type' => 'handoff',
+        ]);
+        $grandchild1->saveQuietly();
+
+        $greatgrandchild1 = new AgentTrace([
+            'id' => 'greatgrandchild-1',
+            'trace_id' => 'trace-descendants',
+            'parent_id' => 'grandchild-1',
+            'name' => 'Great Grandchild 1',
+            'type' => 'tool_call',
+        ]);
+        $greatgrandchild1->saveQuietly();
+
+        // Access the private method using reflection
+        $reflection = new \ReflectionClass($root);
+        $method = $reflection->getMethod('getAllDescendantIds');
+        $method->setAccessible(true);
+
+        $descendants = $method->invoke($root);
+
+        // Verify all descendants are found
+        $this->assertCount(4, $descendants);
+        $this->assertContains('child-1', $descendants);
+        $this->assertContains('child-2', $descendants);
+        $this->assertContains('grandchild-1', $descendants);
+        $this->assertContains('greatgrandchild-1', $descendants);
+    }
+
+    public function test_cached_tool_call_count()
+    {
+        // Create a trace with predefined tool_call_count
+        $trace = new AgentTrace([
+            'id' => 'trace-with-cached-count',
+            'trace_id' => 'trace-counts',
+            'name' => 'Cached Count Trace',
+            'type' => 'agent_execution',
+            'tool_call_count' => 5,
+        ]);
+        $trace->saveQuietly();
+
+        // Test that the accessor returns the cached value
+        $this->assertEquals(5, $trace->tool_call_count);
     }
 
     public function test_display_name_attribute()
