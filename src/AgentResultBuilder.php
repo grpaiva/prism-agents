@@ -27,11 +27,16 @@ class AgentResultBuilder
     /**
      * Add trace to the result
      *
-     * @param Trace $trace
+     * @param Trace|string $trace Trace object or trace name
      * @return AgentResult
      */
-    public function withTrace(Trace $trace): AgentResult
+    public function withTrace(Trace|string $trace): AgentResult
     {
+        // If a string is provided, create a trace with that name
+        if (is_string($trace)) {
+            $trace = Trace::as($trace);
+        }
+
         $trace->addResult($this->result);
         return $this->result;
     }
