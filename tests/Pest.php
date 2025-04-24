@@ -40,36 +40,3 @@ expect()->extend('toBeOne', function () {
 | global functions to help you to reduce the number of lines of code in your test files.
 |
 */
-
-/**
- * Create a mock for Prism's response
- */
-function mockPrismResponse($responseData) {
-    // Create a mock response object
-    if (is_string($responseData)) {
-        $response = Mockery::mock(Prism\Prism\Response::class);
-        $response->text = $responseData;
-        $response->toolResults = [];
-        $response->steps = [];
-    } else {
-        $response = Mockery::mock(Prism\Prism\Response::class);
-        $response->text = $responseData->text;
-        $response->toolResults = $responseData->toolResults ?? [];
-        $response->steps = $responseData->steps ?? [];
-    }
-    
-    // Create a fluent mock that handles the method chain
-    $fluent = Mockery::mock();
-    $fluent->shouldReceive('using')->andReturnSelf();
-    $fluent->shouldReceive('withSystemPrompt')->andReturnSelf();
-    $fluent->shouldReceive('withPrompt')->andReturnSelf();
-    $fluent->shouldReceive('withMessage')->andReturnSelf();
-    $fluent->shouldReceive('withTools')->andReturnSelf();
-    $fluent->shouldReceive('asText')->andReturn($response);
-    
-    // Mock the Prism facade
-    $prismMock = Mockery::mock('alias:Prism\Prism\Prism');
-    $prismMock->shouldReceive('text')->andReturn($fluent);
-    
-    return $response;
-} 
