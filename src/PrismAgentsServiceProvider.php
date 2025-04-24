@@ -9,7 +9,7 @@ class PrismAgentsServiceProvider extends ServiceProvider
     /**
      * Bootstrap the application services.
      */
-    public function boot()
+    public function boot(): void
     {
         /*
          * Optional methods to load your package assets
@@ -25,9 +25,9 @@ class PrismAgentsServiceProvider extends ServiceProvider
             ], 'config');
 
             // Publishing the views.
-            /*$this->publishes([
+            $this->publishes([
                 __DIR__.'/../resources/views' => resource_path('views/vendor/prism-agents'),
-            ], 'views');*/
+            ], 'views');
 
             // Publishing assets.
             /*$this->publishes([
@@ -44,9 +44,20 @@ class PrismAgentsServiceProvider extends ServiceProvider
 
             // Publish migration for traces
             $this->publishes([
-                __DIR__.'/../database/migrations/create_prism_agent_traces_table.php' => database_path('migrations/' . date('Y_m_d_His', time()) . '_create_prism_agent_traces_table.php'),
+                __DIR__.'/../database/migrations/create_prism_agent_traces_table.php' => database_path('migrations/'.date('Y_m_d_His', time()).'_create_prism_agent_traces_table.php'),
             ], 'migrations');
         }
+
+        // Load the configuration
+        $this->mergeConfigFrom(__DIR__.'/../config/config.php', 'prism-agents');
+        
+        // Register routes
+        if (config('prism-agents.ui.enabled', true)) {
+            $this->loadRoutesFrom(__DIR__.'/Http/routes.php');
+        }
+        
+        // Register views
+        $this->loadViewsFrom(__DIR__.'/../resources/views/prism-agents', 'prism-agents');
     }
 
     /**

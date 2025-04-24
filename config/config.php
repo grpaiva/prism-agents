@@ -66,4 +66,23 @@ return [
         // Automatically infer JSON schema for tool parameters
         'infer_parameters' => env('PRISM_AGENTS_INFER_TOOL_PARAMETERS', true),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | UI Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for the trace visualization UI
+    |
+    */
+    'ui' => [
+        // Whether to enable the web UI
+        'enabled' => env('PRISM_AGENTS_UI_ENABLED', true),
+        
+        // Route path prefix (default: /prism-agents)
+        'route_prefix' => env('PRISM_AGENTS_UI_ROUTE_PREFIX', 'prism-agents'),
+        
+        // Middleware for UI routes
+        'middleware' => env('PRISM_AGENTS_UI_MIDDLEWARE', 'web'),
+    ],
 ];
