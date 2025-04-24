@@ -43,18 +43,17 @@
                                 </div>
                                 <div class="ml-2 flex-shrink-0 flex">
                                     <p class="text-sm text-gray-500">
-                                        {{ \Carbon\Carbon::parse($trace->started_at)->format('M j, Y g:i:s A') }}
+                                        {{ $trace->started_at->format('M j, Y g:i:s A') }}
                                     </p>
                                 </div>
                                 <div class="ml-8 flex-shrink-0 flex">
                                     <p class="text-sm text-gray-500">
-                                        {{ abs($trace->duration) }} ms
+                                        {{ $trace->formatted_duration }}
                                     </p>
                                 </div>
                                 <div class="ml-8 flex-shrink-0 flex">
                                     @php
-                                        $metadata = json_decode($trace->metadata, true);
-                                        $status = $metadata['status'] ?? 'unknown';
+                                        $status = $trace->status_value;
                                     @endphp
                                     
                                     @if($status === 'success')
