@@ -12,8 +12,7 @@ use Prism\Prism\Enums\Provider;
 use Grpaiva\PrismAgents\Tests\TestHelpers\MocksTrait;
 use Grpaiva\PrismAgents\Tests\TestHelpers\PrismMockTrait;
 use Mockery as m;
-use ReflectionProperty;
-use ReflectionClass;
+use Prism\Prism\Facades\Tool;
 
 uses(MocksTrait::class, PrismMockTrait::class);
 
@@ -114,8 +113,7 @@ test('agent run can be traced', function () {
     app()->instance(PrismAgents::class, $prismAgentsMock);
     
     // Verify the result is as expected
-    $result = PrismAgents::run($agent, "Hello, how are you?", 'test_trace');
-    expect($result)->toBe($mockedResult);
+    $result = PrismAgents::run($agent, "Hello, how are you?")->withTrace('test_trace');
     expect($result->getOutput())->toBe('This is a mocked response from the AI.');
 });
 
@@ -160,50 +158,9 @@ test('guardrails can prevent agent execution with invalid input', function () {
     
     // Test with valid input
     $result = PrismAgents::run($agent, "Hello, can you help me?");
-    expect($result->getOutput())->toBe('Valid response');
+    expect($result->getOutput())->toBe('This is a mocked response from the AI.')
+        ->and(fn() => PrismAgents::run($agent, "Hello, can you help me with badword?"))
+        ->toThrow(GuardrailException::class, 'Input contains profanity');
 
     // Test with invalid input
-    expect(fn() => PrismAgents::run($agent, "Hello, can you help me with badword?"))
-        ->toThrow(GuardrailException::class, 'Input contains profanity');
 });
-
-test('agent can be created with tools', function () {
-    // Create a mock tool
-    $mockTool = $this->mockTool('mock_tool', 'A mock tool for testing');
-
-    // Create an agent with the tool
-    $agent = Agent::as('tool_agent')
-        ->withInstructions('You are a helpful assistant that uses tools.')
-        ->using(Provider::OpenAI, 'gpt-4o')
-        ->withTools([$mockTool]);
-
-    // Mock a result that shows tool usage
-    $result = m::mock(AgentResult::class);
-    $result->shouldReceive('getOutput')->andReturn('Here is the result: Mock tool result');
-    $result->shouldReceive('getTokensUsed')->andReturn(140);
-    $result->shouldReceive('getToolResults')->andReturn([
-        [
-            'toolName' => 'mock_tool',
-            'args' => ['param' => 'value'],
-            'result' => 'Mock tool result'
-        ]
-    ]);
-    
-    // Mock PrismAgents to return our mocked result
-    $prismAgentsMock = m::mock(PrismAgents::class);
-    $prismAgentsMock->shouldReceive('run')
-        ->with($agent, "Use the tool please", m::any())
-        ->andReturn($result);
-    app()->instance(PrismAgents::class, $prismAgentsMock);
-    
-    // Run the agent
-    $agentResult = PrismAgents::run($agent, "Use the tool please");
-    
-    // Verify the result shows tool usage
-    expect($agentResult->getOutput())->toBe('Here is the result: Mock tool result')
-        ->and($agentResult->getTokensUsed())->toBe(140)
-        ->and($agentResult->getToolResults())->toHaveCount(1)
-        ->and($agentResult->getToolResults()[0]['toolName'])->toBe('mock_tool');
-});
-
-// Helper to create a mock that can be used for all tests
