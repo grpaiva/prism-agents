@@ -3,10 +3,12 @@
 namespace Grpaiva\PrismAgents;
 
 use Grpaiva\PrismAgents\Exceptions\GuardrailException;
+use Grpaiva\PrismAgents\Tracing\Tracer;
 use Prism\Prism\Prism;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Text\Response;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class Runner
 {
@@ -16,9 +18,9 @@ class Runner
     protected const DEFAULT_SYSTEM_MESSAGE = "You are part of a multi-agent system called the Agents SDK, designed to make agent coordination and execution easy. Agents uses two primary abstraction: Agents and Handoffs. An agent encompasses instructions and tools and can hand off a conversation to another agent when appropriate. Handoffs are achieved by calling a handoff function, generally named transfer_to_<agent_name>. Transfers between agents are handled seamlessly in the background; do not mention or draw attention to these transfers in your conversation with the user.";
 
     /**
-     * @var Trace|null
+     * @var Tracer|null
      */
-    protected ?Trace $trace = null;
+    protected ?Tracer $tracer = null;
 
     /**
      * @var int|null
@@ -26,26 +28,23 @@ class Runner
     protected ?int $maxSteps = null;
 
     /**
-     * Create a new Runner instance
+     * Create a new Runner instance.
+     * If no tracer is provided, a new one will be created for this run.
      */
-    public function __construct()
+    public function __construct(?Tracer $tracer = null)
     {
-        $this->trace = Trace::as('agent_runner');
+        $this->tracer = $tracer;
     }
 
     /**
-     * Set the trace for this runner
+     * Set the tracer for this runner.
      * 
-     * @param Trace|string $trace Trace object or trace name
+     * @param Tracer $tracer
      * @return $this
      */
-    public function withTrace(Trace|string $trace): self
+    public function withTracer(Tracer $tracer): self
     {
-        if (is_string($trace)) {
-            $trace = Trace::as($trace);
-        }
-        
-        $this->trace = $trace;
+        $this->tracer = $tracer;
         return $this;
     }
 
@@ -71,11 +70,21 @@ class Runner
      */
     public function runAgent(Agent $agent, $input, ?AgentContext $context = null): AgentResult
     {
+        // Ensure a tracer is available, create one if necessary
+        if (!$this->tracer) {
+            // Use agent name for workflow if creating tracer here
+            $this->tracer = new Tracer(null, $agent->getName()); 
+        }
+
         // Create a context if none is provided
         $context = $context ?? AgentContext::as('runner_context');
 
-        // Start tracing
-        $spanId = $this->trace->startSpan($agent->getName(), 'agent_run');
+        // Start tracing for this specific agent execution span
+        $agentSpan = $this->tracer?->startSpan(
+            $agent->getName(), 
+            'agent_execution', // Use 'agent_execution' for the main agent run
+            ['input' => $input] // Initial span data
+        );
         
         try {
             // Check guardrails before execution
@@ -84,21 +93,74 @@ class Runner
             // Prepare tools
             $tools = $agent->getTools();
             $prismTools = [];
+            $agentToolNames = []; // Keep track of tools that are agents (for handoff detection)
             
             // Convert tools to Prism Tool objects if necessary
             foreach ($tools as $tool) {
-                if ($tool instanceof \Prism\Prism\Tool) {
+                // --- Handle Agent as Tool --- 
+                if ($tool instanceof Agent) {
+                    $agentInstance = $tool; // Keep reference to the agent
+                    $toolName = $agentInstance->getName();
+                    $toolDescription = $agentInstance->getHandoffDescription() ?? "Agent: {$agentInstance->getName()}";
+                    $currentTracer = $this->tracer; // Capture current tracer
+
+                    $prismAgentTool = \Prism\Prism\Facades\Tool::as($toolName)
+                        ->for($toolDescription)
+                        ->withStringParameter('input', 'Input for the agent', true) // Assume agent tools take a single string input
+                        ->using(function (string $input) use ($agentInstance, $currentTracer) {
+                            // Execute the sub-agent using the *captured* tracer
+                            $subRunner = new Runner($currentTracer);
+                            // We might need to pass more context here eventually
+                            $result = $subRunner->runAgent($agentInstance, $input);
+                            // Return the output, or maybe the full AgentResult?
+                            // Returning just output for now based on previous logic.
+                            return $result->getOutput(); 
+                        });
+                        
+                    $prismTools[] = $prismAgentTool;
+                    $agentToolNames[] = $toolName; // Mark this as an agent tool name
+                } 
+                // --- Handle Standard Prism Tool --- 
+                elseif ($tool instanceof \Prism\Prism\Tool) {
                     $prismTools[] = $tool;
-                } elseif ($tool instanceof \Grpaiva\PrismAgents\Tool) {
-                    $prismTools[] = $tool->getPrismTool();
+                    // Heuristic: Assume direct Prism tools aren't agents?
+                } 
+                // --- Handle internal Tool wrapper (potentially deprecated?) ---
+                elseif ($tool instanceof \Grpaiva\PrismAgents\Tool) {
+                    // This path might need review - is Grpaiva\PrismAgents\Tool still needed?
+                    $prismTools[] = $tool->getPrismTool(); 
+                    $toolDefinition = $this->convertToolToDefinition($tool);
+                    if ($tool->isAgentTool()) { 
+                        $agentToolNames[] = $toolDefinition['name'] ?? null;
+                    }
                 }
+                // --- Handle other potential tool types (e.g., Closures directly?) ---
+                 else {
+                    // Maybe convert closures or other definitions here if supported
+                    // For now, let's assume only Agent or Prism\Tool are primary inputs
+                 }
             }
+            $agentToolNames = array_filter(array_unique($agentToolNames)); // Ensure uniqueness
             
             // Build a Prism request using the agent's configuration
             $combinedSystemPrompt = self::DEFAULT_SYSTEM_MESSAGE . "\n\n" . $agent->getInstructions();
             $prismRequest = Prism::text()
                 ->withSystemPrompt($combinedSystemPrompt);
             
+            // Start LLM step span (or maybe multiple spans if Prism has multiple steps?)
+            // For now, assume one primary LLM interaction span
+            $llmSpan = $this->tracer?->startSpan(
+                'llm_request', 
+                'llm_step', // A more specific type for the LLM interaction
+                [
+                    'provider' => $agent->getProvider()?->value, // Use ->value for Enum
+                    'model' => $agent->getModel(),
+                    'system_prompt' => $combinedSystemPrompt,
+                    'tools_provided' => array_map(fn($t) => $this->convertToolToDefinition($t), $prismTools), // Use helper method
+                ],
+                $agentSpan?->id // Explicitly parent under agent span
+            );
+
             // Set provider and model if specified in the agent
             if ($agent->getProvider() && $agent->getModel()) {
                 $prismRequest->using(
@@ -120,9 +182,12 @@ class Runner
             
             // Handle different input types
             if (is_string($input)) {
+                // Log prompt in LLM span data
+                $this->tracer?->addEvent('Adding prompt', ['prompt' => $input], $llmSpan?->id);
                 $prismRequest->withPrompt($input);
             } elseif ($input instanceof AgentResult) {
                 // If input is an AgentResult, use its output as the prompt
+                $this->tracer?->addEvent('Adding prompt from previous result', ['prompt' => $input->getOutput()], $llmSpan?->id);
                 $prismRequest->withPrompt($input->getOutput());
                 // Add context from previous result if useful
                 if ($input->getAgent()) {
@@ -130,6 +195,7 @@ class Runner
                 }
             } elseif (is_array($input)) {
                 // Assuming input is a conversation history array
+                $this->tracer?->addEvent('Adding messages', ['messages' => $input], $llmSpan?->id);
                 foreach ($input as $message) {
                     if (isset($message['role']) && isset($message['content'])) {
                         $prismRequest->withMessage($message['role'], $message['content']);
@@ -137,13 +203,37 @@ class Runner
                 }
             }
             
+            $this->tracer?->addEvent('Sending request to LLM', [], $llmSpan?->id);
             // Execute the request
             $response = $prismRequest->asText();
             
-            // Process the response
-            $result = $this->processResponse($response, $agent, $input, $context);
-            
-            // Add system messages to the result metadata for tracing
+            // Manually construct array from response properties for logging
+            $responseDataForTrace = [
+                'text' => $response->text,
+                'finishReason' => $this->enumToString($response->finishReason),
+                'toolCalls' => $response->toolCalls,
+                'toolResults' => $response->toolResults,
+                'steps' => $response->steps->toArray(), // Collection has toArray
+                'usage' => $this->extractUsageData($response->usage),
+                'meta' => $response->meta ? get_object_vars($response->meta) : null, // Convert meta object to array
+            ];
+            $this->tracer?->addEvent('Received response from LLM', ['response_raw' => $responseDataForTrace], $llmSpan?->id);
+
+            // End the LLM span
+            $this->tracer?->endSpan(
+                $llmSpan?->id, 
+                'success',
+                [
+                    // Use the manually constructed array here too
+                    'response' => $responseDataForTrace, 
+                    'usage' => $this->extractUsageData($response->usage) // Usage is already part of $responseDataForTrace, but keep for clarity?
+                ]
+            );
+
+            // Process the response to create AgentResult and handle tool calls/steps
+            $result = $this->processResponseAndTraceSteps($response, $agent, $input, $context, $agentSpan?->id, $agentToolNames);
+
+            // Add system messages to the result metadata for tracing (and potential display)
             $metadata = $result->getMetadata() ?? [];
             $metadata['system_message'] = [
                 'default' => self::DEFAULT_SYSTEM_MESSAGE,
@@ -152,40 +242,41 @@ class Runner
             ];
             $result->setMetadata($metadata);
             
-            // Complete the trace span
-            $this->trace->endSpan($spanId, [
-                'status' => 'success',
-                'result' => $result->toArray(),
-            ]);
+            // End the main agent execution span
+            $this->tracer?->endSpan(
+                $agentSpan?->id,
+                'success',
+                ['output' => $result->getOutput(), 'final_result' => $result->toArray()] // Add final output and result
+            );
             
             return $result;
         } catch (\Exception $e) {
             // Log and trace the error
             Log::error('Error in agent run: ' . $e->getMessage(), [
                 'agent' => $agent->getName(),
+                'input' => $input,
                 'exception' => $e,
             ]);
             
-            // End span with error
-            $this->trace->endSpan($spanId, [
-                'status' => 'error',
-                'error' => $e->getMessage(),
-            ]);
+            // End the main agent span with error
+            $this->tracer?->endSpan($agentSpan?->id, 'error', [], $e);
             
-            throw $e;
+            throw $e; // Re-throw the exception
         }
     }
 
     /**
-     * Process the response from the LLM
+     * Process the response from the LLM, create AgentResult, and trace steps/tools.
      *
      * @param Response $response Prism Text Response
      * @param Agent $agent
      * @param string|array|AgentResult $input
      * @param AgentContext $context
+     * @param string|null $parentSpanId The ID of the parent agent execution span.
+     * @param array $agentToolNames Names of tools known to be other agents.
      * @return AgentResult
      */
-    protected function processResponse(Response $response, Agent $agent, $input, AgentContext $context): AgentResult
+    protected function processResponseAndTraceSteps(Response $response, Agent $agent, $input, AgentContext $context, ?string $parentSpanId, array $agentToolNames): AgentResult
     {
         $result = AgentResult::create($agent, $input);
         
@@ -201,16 +292,69 @@ class Runner
             }
         }
         
-        // Add steps
+        // Add steps and trace them
         if ($response->steps->isNotEmpty()) {
+            $stepIndex = 0;
             foreach ($response->steps as $step) {
-                $result->addStep([
+                $stepDataForAgentResult = [
                     'text' => $step->text,
                     'finish_reason' => $this->enumToString($step->finishReason),
-                    'tool_calls' => $step->toolCalls,
-                    'tool_results' => $step->toolResults,
+                    'tool_calls' => $step->toolCalls, // Keep raw tool calls here
+                    'tool_results' => $step->toolResults, // Keep raw tool results here
                     'additional_content' => $step->additionalContent,
-                ]);
+                ];
+                $result->addStep($stepDataForAgentResult);
+
+                // Start a span for this step
+                $stepSpan = $this->tracer?->startSpan(
+                    "step_{$stepIndex}",
+                    'llm_step', // Type for a step within an agent execution
+                    [
+                        'step_index' => $stepIndex,
+                        'text_generated' => $step->text,
+                        'finish_reason' => $this->enumToString($step->finishReason),
+                        'usage' => $this->extractUsageData($step->usage),
+                        'meta' => $step->meta ? get_object_vars($step->meta) : null,
+                        'raw_tool_calls' => $step->toolCalls, // Store raw calls from Prism
+                    ],
+                    $parentSpanId // Parent is the main agent execution span
+                );
+
+                // Trace tool calls and handoffs within this step
+                if (!empty($step->toolResults)) {
+                    $toolCallIndex = 0;
+                    foreach ($step->toolResults as $toolResult) {
+                        $toolName = $toolResult->toolName ?? 'unknown_tool';
+                        $isHandoff = in_array($toolName, $agentToolNames);
+                        $spanType = $isHandoff ? 'handoff' : 'tool_call';
+
+                        $toolSpan = $this->tracer?->startSpan(
+                            "tool_{$toolName}_{$toolCallIndex}", // Name includes index for uniqueness
+                            $spanType,
+                            [
+                                'tool_call_id' => $toolResult->toolCallId, // From Prism response
+                                'tool_name' => $toolName,
+                                'arguments' => $toolResult->args ?? [],
+                                'is_agent_tool' => $isHandoff,
+                                // Result will be added when the span ends
+                            ],
+                            $stepSpan?->id // Parent is the current step span
+                        );
+
+                        // End the tool/handoff span immediately (assuming synchronous execution for now)
+                        // TODO: Handle async tool calls if needed
+                        $this->tracer?->endSpan(
+                            $toolSpan?->id,
+                            'success', // Assuming success, error handling might need adjustment
+                            ['result' => $toolResult->result ?? null]
+                        );
+                        $toolCallIndex++;
+                    }
+                }
+
+                // End the step span
+                $this->tracer?->endSpan($stepSpan?->id, 'success');
+                $stepIndex++;
             }
         }
         

@@ -42,10 +42,15 @@ class PrismAgentsServiceProvider extends ServiceProvider
             // Registering package commands.
             // $this->commands([]);
 
-            // Publish migration for traces
-            $this->publishes([
-                __DIR__.'/../database/migrations/create_prism_agent_traces_table.php' => database_path('migrations/'.date('Y_m_d_His', time()).'_create_prism_agent_traces_table.php'),
-            ], 'migrations');
+            // Publish migrations for executions and spans
+            if (! class_exists('CreatePrismAgentExecutionsTable')) {
+                $timestamp = date('Y_m_d_His', time());
+                $this->publishes([
+                    __DIR__.'/../database/migrations/2025_04_25_000000_create_prism_agent_executions_table.php' => database_path('migrations/'.$timestamp.'_create_prism_agent_executions_table.php'),
+                    // Add a small delay to ensure the spans migration gets a later timestamp
+                    __DIR__.'/../database/migrations/2025_04_25_000001_create_prism_agent_spans_table.php' => database_path('migrations/'.date('Y_m_d_His', time() + 1).'_create_prism_agent_spans_table.php'), 
+                ], 'migrations');
+            }
         }
 
         // Load the configuration

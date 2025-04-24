@@ -85,7 +85,8 @@
             case 'llm_step':
                 return '💬';
             case 'handoff':
-                return '🔄';
+                // should be an emoji that represents handing off to another agent
+                return '👋';
             case 'tool_call':
                 return '🔧';
             default:

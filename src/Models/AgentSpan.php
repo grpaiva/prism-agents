@@ -122,22 +122,67 @@ class AgentSpan extends Model
             if (!$model->status) {
                 $model->status = 'running';
             }
-            // Ensure span_data is stored as JSON
-            if (is_array($model->span_data)) {
-                $model->span_data = json_encode($model->span_data);
+            // Initial sanitization and encoding for creating
+            // Make sure span_data is an array before sanitizing
+            $spanData = is_array($model->span_data) 
+                ? $model->span_data 
+                : (json_decode($model->span_data, true) ?? []);
+            $model->attributes['span_data'] = json_encode(self::sanitizeDataForJson($spanData));
+            
+            // Also sanitize error if it's set during creation (less likely but possible)
+            if (!empty($model->error)) {
+                 $errorData = is_array($model->error) 
+                    ? $model->error 
+                    : (json_decode($model->error, true) ?? []);
+                $model->attributes['error'] = json_encode(self::sanitizeDataForJson($errorData));
             }
         });
         
         static::saving(function ($model) {
-             // Ensure span_data is stored as JSON before saving
-            if (is_array($model->span_data)) {
-                $model->span_data = json_encode($model->span_data);
+             // Always sanitize and encode dirty JSON attributes before saving
+            if ($model->isDirty('span_data')) {
+                $spanData = is_array($model->span_data) 
+                    ? $model->span_data 
+                    : (json_decode($model->span_data, true) ?? []);
+                // Use rawAttributes to prevent triggering mutators again if span_data has one
+                $model->attributes['span_data'] = json_encode(self::sanitizeDataForJson($spanData));
             }
-            // Ensure error is stored as JSON before saving
-            if (is_array($model->error)) {
-                $model->error = json_encode($model->error);
+            if ($model->isDirty('error')) {
+                 $errorData = is_array($model->error) 
+                    ? $model->error 
+                    : (json_decode($model->error, true) ?? []);
+                $model->attributes['error'] = json_encode(self::sanitizeDataForJson($errorData));
             }
         });
+    }
+
+    /**
+     * Recursively sanitize data for JSON encoding, converting non-backed enums.
+     */
+    protected static function sanitizeDataForJson($data)
+    {
+        if (is_array($data)) {
+            foreach ($data as $key => $value) {
+                $data[$key] = self::sanitizeDataForJson($value);
+            }
+        } elseif (is_object($data)) {
+            if ($data instanceof \UnitEnum && !($data instanceof \BackedEnum)) {
+                 // Convert non-backed enum to its name
+                return $data->name; 
+            } elseif ($data instanceof \BackedEnum) {
+                 // Convert backed enum to its value
+                return $data->value; 
+            } elseif (method_exists($data, 'toArray')) {
+                 // If object has toArray, recursively sanitize its array form
+                return self::sanitizeDataForJson($data->toArray());
+            } elseif ($data instanceof \stdClass) {
+                // Convert stdClass to array and sanitize
+                return self::sanitizeDataForJson((array) $data);
+            } 
+            // Keep other objects as they are (let json_encode handle them or fail)
+        }
+        // Return scalar values or sanitized arrays/values
+        return $data;
     }
 
     /**

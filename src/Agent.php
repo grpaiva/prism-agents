@@ -156,23 +156,17 @@ class Agent
     }
 
     /**
-     * Create a tool representation of this agent
+     * Create a tool representation of this agent.
+     * This method now returns the Agent instance itself.
+     * The Runner will be responsible for creating the actual Prism Tool with the correct handler.
      *
-     * @return \Prism\Prism\Tool
+     * @return self
      */
-    public function asTool(): \Prism\Prism\Tool
+    public function asTool(): self
     {
-        $toolName = $this->name;
-        $toolDescription = $this->handoffDescription ?? "Agent: {$this->name}";
-        
-        return \Prism\Prism\Facades\Tool::as($toolName)
-            ->for($toolDescription)
-            ->withStringParameter('input', 'Input for the agent', true)
-            ->using(function (string $input) {
-                // Execute this agent with the given arguments
-                $runner = new Runner();
-                return ($runner->runAgent($this, $input))->getOutput();
-            });
+        // Return the agent instance itself.
+        // The Runner will handle creating the Prism Tool with the correct handler context.
+        return $this;
     }
 
     /**

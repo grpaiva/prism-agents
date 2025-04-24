@@ -3,7 +3,9 @@
 namespace Grpaiva\PrismAgents;
 
 use Closure;
+use Grpaiva\PrismAgents\Tracing\Tracer;
 use Prism\Prism\Enums\Provider;
+use Throwable;
 
 class PrismAgents
 {
@@ -100,23 +102,53 @@ class PrismAgents
      *
      * @param Agent $agent
      * @param string|array $input
-     * @param Trace|string|null $trace Optional trace or trace name
+     * @param Tracer|string|null $tracerOrId Optional Tracer instance or execution ID/workflow name string.
      * @return AgentResultBuilder
      */
-    public static function run(Agent $agent, $input, Trace|string|null $trace = null): AgentResultBuilder
+    public static function run(Agent $agent, $input, Tracer|string|null $tracerOrId = null): AgentResultBuilder
     {
-        $runner = new Runner();
-        
-        // Set trace if provided
-        if ($trace !== null) {
-            if (is_string($trace)) {
-                $trace = Trace::as($trace);
-            }
-            $runner->withTrace($trace);
+        $tracer = null;
+        $shouldEndExecution = false;
+
+        // Initialize or set tracer
+        if ($tracerOrId instanceof Tracer) {
+            $tracer = $tracerOrId;
+        } elseif (is_string($tracerOrId)) {
+            // Assume the string is a workflow name / execution ID
+            $tracer = new Tracer(null, $tracerOrId); 
+            $shouldEndExecution = true; // If we create it here, we should end it here
+        } else {
+            // No tracer provided, create a default one
+            $tracer = new Tracer(null, $agent->getName()); 
+            $shouldEndExecution = true;
         }
         
-        $result = $runner->runAgent($agent, $input);
-        return new AgentResultBuilder($result);
+        $runner = new Runner($tracer); // Pass tracer to Runner
+        
+        try {
+            $result = $runner->runAgent($agent, $input);
+            // Ensure the result has the execution ID if tracing is enabled
+            if ($tracer && $tracer->isEnabled() && $tracer->getExecutionId()) {
+                $result->setExecutionId($tracer->getExecutionId());
+            }
+            return new AgentResultBuilder($result);
+        } catch (Throwable $e) {
+            // If an error occurred during runAgent, the runner's span is ended with error.
+            // We still need to end the overall execution here.
+            if ($shouldEndExecution && $tracer) {
+                $tracer->endExecution('failed', $e);
+            }
+            throw $e; // Re-throw exception
+        } finally {
+            // End the execution trace if it was started within this run method
+            if ($shouldEndExecution && $tracer) {
+                 // If runAgent completed without error, endExecution status defaults to 'completed'
+                 // If runAgent threw an error, endExecution was already called in catch block
+                 if (!isset($e)) { // Only end normally if no exception was caught
+                     $tracer->endExecution(); 
+                 }
+            }
+        }
     }
 
     /**

@@ -61,6 +61,13 @@ class AgentResult
      * @var array
      */
     protected array $metadata = [];
+    
+    /**
+     * The ID of the execution trace this result belongs to.
+     * 
+     * @var string|null
+     */
+    protected ?string $executionId = null;
 
     /**
      * Protected constructor to enforce static factory methods
@@ -251,15 +258,37 @@ class AgentResult
     {
         return $this->input;
     }
+    
+    /**
+     * Set the execution ID for this result.
+     *
+     * @param string|null $executionId
+     * @return $this
+     */
+    public function setExecutionId(?string $executionId): self
+    {
+        $this->executionId = $executionId;
+        return $this;
+    }
 
     /**
-     * Check if the result has output
+     * Get the execution ID associated with this result.
+     *
+     * @return string|null
+     */
+    public function getExecutionId(): ?string
+    {
+        return $this->executionId;
+    }
+
+    /**
+     * Check if the result contains output (either text or structured)
      *
      * @return bool
      */
     public function hasOutput(): bool
     {
-        return !empty($this->output);
+        return !empty($this->output) || !empty($this->structuredOutput);
     }
 
     /**
@@ -310,6 +339,7 @@ class AgentResult
             'error' => $this->error,
             'success' => $this->isSuccess(),
             'metadata' => $this->metadata,
+            'executionId' => $this->executionId,
         ];
     }
 
