@@ -120,6 +120,68 @@ class PrismAgents
     }
 
     /**
+     * Process a Prism response directly
+     *
+     * @param mixed $prismResponse The raw Prism response
+     * @param Agent|null $agent The agent that generated the response (optional)
+     * @param mixed $input The input that was given to the agent (optional)
+     * @param Trace|string|null $trace Optional trace or trace name
+     * @return AgentResultBuilder
+     */
+    public static function processPrismResponse($prismResponse, ?Agent $agent = null, $input = null, Trace|string|null $trace = null): AgentResultBuilder
+    {
+        // Convert to array if it's a JSON string
+        if (is_string($prismResponse) && (str_starts_with($prismResponse, '{') || str_starts_with($prismResponse, '['))) {
+            $decoded = json_decode($prismResponse, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $prismResponse = $decoded;
+            }
+        }
+        
+        // Create an AgentResult from the Prism response
+        $result = AgentResult::create($agent, $input);
+        $result->loadFromPrismResponse($prismResponse);
+        
+        // Add trace if provided
+        $builder = new AgentResultBuilder($result);
+        if ($trace !== null) {
+            $builder->withTrace($trace);
+        }
+        
+        return $builder;
+    }
+
+    /**
+     * Create a result from raw data
+     * 
+     * @param mixed $output The output text or data
+     * @param Agent|null $agent The agent that generated the output (optional)
+     * @param mixed $input The input that was given to the agent (optional)
+     * @param array $metadata Additional metadata (optional)
+     * @return AgentResultBuilder
+     */
+    public static function createResult($output, ?Agent $agent = null, $input = null, array $metadata = []): AgentResultBuilder
+    {
+        $result = AgentResult::create($agent, $input);
+        
+        if (is_string($output)) {
+            $result->setOutput($output);
+        } elseif (is_array($output) && isset($output['text'])) {
+            $result->setOutput($output['text']);
+            // Add the rest as metadata
+            $outputMetadata = $output;
+            unset($outputMetadata['text']);
+            $metadata = array_merge($outputMetadata, $metadata);
+        }
+        
+        if (!empty($metadata)) {
+            $result->setMetadata($metadata);
+        }
+        
+        return new AgentResultBuilder($result);
+    }
+
+    /**
      * Create a new trace
      *
      * @param string|null $traceId

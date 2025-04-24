@@ -44,7 +44,8 @@ class PrismAgentsServiceProvider extends ServiceProvider
 
             // Publish migration for traces
             $this->publishes([
-                __DIR__.'/../database/migrations/create_prism_agent_traces_table.php' => database_path('migrations/'.date('Y_m_d_His', time()).'_create_prism_agent_traces_table.php'),
+                __DIR__.'/../database/migrations/create_prism_agent_traces_table.php' => database_path('migrations/'.date('Y_m_d_His', time()).'_1_create_prism_agent_traces_table.php'),
+                __DIR__.'/../database/migrations/create_prism_agent_spans_table.php' => database_path('migrations/'.date('Y_m_d_His', time()).'_2_create_prism_agent_spans_table.php'),
             ], 'migrations');
         }
 

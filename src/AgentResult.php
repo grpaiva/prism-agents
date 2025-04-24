@@ -35,6 +35,13 @@ class AgentResult
     protected array $toolResults = [];
 
     /**
+     * All tool calls made during execution (including IDs)
+     *
+     * @var array
+     */
+    protected array $allToolCalls = [];
+
+    /**
      * Steps taken during execution
      *
      * @var array
@@ -61,6 +68,27 @@ class AgentResult
      * @var array
      */
     protected array $metadata = [];
+
+    /**
+     * The LLM provider used
+     * 
+     * @var string|null
+     */
+    protected ?string $provider = null;
+
+    /**
+     * The LLM model used
+     * 
+     * @var string|null
+     */
+    protected ?string $model = null;
+
+    /**
+     * The system message used
+     * 
+     * @var string|null
+     */
+    protected ?string $systemMessage = null;
 
     /**
      * Protected constructor to enforce static factory methods
@@ -153,6 +181,72 @@ class AgentResult
     }
 
     /**
+     * Set the provider
+     *
+     * @param string $provider
+     * @return $this
+     */
+    public function setProvider(string $provider): self
+    {
+        $this->provider = $provider;
+        return $this;
+    }
+
+    /**
+     * Get the provider
+     *
+     * @return string|null
+     */
+    public function getProvider(): ?string
+    {
+        return $this->provider;
+    }
+
+    /**
+     * Set the model
+     *
+     * @param string $model
+     * @return $this
+     */
+    public function setModel(string $model): self
+    {
+        $this->model = $model;
+        return $this;
+    }
+
+    /**
+     * Get the model
+     *
+     * @return string|null
+     */
+    public function getModel(): ?string
+    {
+        return $this->model;
+    }
+
+    /**
+     * Set the system message
+     *
+     * @param string $systemMessage
+     * @return $this
+     */
+    public function setSystemMessage(string $systemMessage): self
+    {
+        $this->systemMessage = $systemMessage;
+        return $this;
+    }
+
+    /**
+     * Get the system message
+     *
+     * @return string|null
+     */
+    public function getSystemMessage(): ?string
+    {
+        return $this->systemMessage;
+    }
+
+    /**
      * Check if the result is successful (no error)
      * 
      * @return bool
@@ -163,18 +257,42 @@ class AgentResult
     }
 
     /**
+     * Alias for isSuccess() for compatibility
+     * 
+     * @return bool
+     */
+    public function isSuccessful(): bool
+    {
+        return $this->isSuccess();
+    }
+
+    /**
      * Add a tool result
      *
      * @param string $toolName
      * @param mixed $result
+     * @param string|null $toolCallId
+     * @param array $args
      * @return $this
      */
-    public function addToolResult(string $toolName, $result): self
+    public function addToolResult(string $toolName, $result, ?string $toolCallId = null, array $args = []): self
     {
-        $this->toolResults[] = [
+        $toolResult = [
             'toolName' => $toolName,
             'result' => $result,
         ];
+        
+        // Add tool call ID if provided
+        if ($toolCallId) {
+            $toolResult['toolCallId'] = $toolCallId;
+        }
+        
+        // Add arguments if provided
+        if (!empty($args)) {
+            $toolResult['args'] = $args;
+        }
+        
+        $this->toolResults[] = $toolResult;
         return $this;
     }
 
@@ -186,6 +304,34 @@ class AgentResult
     public function getToolResults(): array
     {
         return $this->toolResults;
+    }
+
+    /**
+     * Add a tool call
+     *
+     * @param string $toolName
+     * @param string $toolCallId
+     * @param array $args
+     * @return $this
+     */
+    public function addToolCall(string $toolName, string $toolCallId, array $args = []): self
+    {
+        $this->allToolCalls[] = [
+            'name' => $toolName,
+            'id' => $toolCallId,
+            'args' => $args,
+        ];
+        return $this;
+    }
+
+    /**
+     * Get all tool calls
+     *
+     * @return array
+     */
+    public function getAllToolCalls(): array
+    {
+        return $this->allToolCalls;
     }
 
     /**
@@ -302,11 +448,15 @@ class AgentResult
     {
         return [
             'agent' => $this->agent ? $this->agent->getName() : null,
+            'provider' => $this->provider,
+            'model' => $this->model,
             'input' => $this->input,
             'output' => $this->output,
             'toolResults' => $this->toolResults,
+            'allToolCalls' => $this->allToolCalls,
             'steps' => $this->steps,
             'structuredOutput' => $this->structuredOutput,
+            'systemMessage' => $this->systemMessage,
             'error' => $this->error,
             'success' => $this->isSuccess(),
             'metadata' => $this->metadata,
@@ -321,5 +471,151 @@ class AgentResult
     public function __toString(): string
     {
         return (string) $this->output;
+    }
+
+    /**
+     * Load response data from Prism format
+     * 
+     * @param array $responseData
+     * @return $this
+     */
+    public function loadFromPrismResponse(array $responseData): self
+    {
+        // If this is wrapped in a response key, unwrap it
+        if (isset($responseData['response']) && is_array($responseData['response'])) {
+            // Handle case where the response is under a response key
+            // This happens with the Prism\Prism\Text\Response class
+            if (isset($responseData['response']['Prism\\Prism\\Text\\Response'])) {
+                return $this->loadFromPrismResponse($responseData['response']['Prism\\Prism\\Text\\Response']);
+            }
+            
+            $responseData = $responseData['response'];
+        }
+        
+        // Extract main output
+        if (isset($responseData['text'])) {
+            $this->setOutput($responseData['text']);
+        }
+        
+        // Extract provider/model info from meta
+        if (isset($responseData['meta'])) {
+            if (isset($responseData['meta']['model'])) {
+                $this->setModel($responseData['meta']['model']);
+            }
+            
+            // Provider could be determined from model name or other factors
+            if (isset($responseData['meta']['model']) && strpos($responseData['meta']['model'], 'gpt-') === 0) {
+                $this->setProvider('openai');
+            }
+        }
+        
+        // Extract steps
+        if (isset($responseData['steps'])) {
+            foreach ($responseData['steps'] as $step) {
+                // Add step using our Prism-specific method
+                $this->addPrismStep($step);
+            }
+        }
+        
+        // Extract usage data into metadata
+        if (isset($responseData['usage'])) {
+            $metadata = $this->getMetadata();
+            $metadata['usage'] = $responseData['usage'];
+            $this->setMetadata($metadata);
+        }
+        
+        return $this;
+    }
+
+    /**
+     * Load response data from OpenAI format (alias for loadFromPrismResponse)
+     * 
+     * @param array $responseData
+     * @return $this
+     */
+    public function loadFromOpenAIResponse(array $responseData): self
+    {
+        return $this->loadFromPrismResponse($responseData);
+    }
+
+    /**
+     * Add a tool call using a Prism ToolCall object
+     *
+     * @param \Prism\Prism\ValueObjects\ToolCall $toolCall
+     * @return $this
+     */
+    public function addPrismToolCall(\Prism\Prism\ValueObjects\ToolCall $toolCall): self
+    {
+        $this->allToolCalls[] = [
+            'name' => $toolCall->name ?? null,
+            'id' => $toolCall->id ?? null,
+            'args' => $toolCall->args ?? [],
+        ];
+        return $this;
+    }
+
+    /**
+     * Add a tool result from a Prism ToolCall result
+     *
+     * @param \Prism\Prism\ValueObjects\ToolCall $toolCall
+     * @param mixed $result The result from the tool
+     * @return $this
+     */
+    public function addPrismToolResult(\Prism\Prism\ValueObjects\ToolCall $toolCall, $result): self
+    {
+        $toolResult = [
+            'toolName' => $toolCall->name ?? 'unknown',
+            'toolCallId' => $toolCall->id ?? null,
+            'args' => $toolCall->args ?? [],
+            'result' => $result,
+        ];
+        
+        $this->toolResults[] = $toolResult;
+        return $this;
+    }
+
+    /**
+     * Add a step from Prism LLM response
+     *
+     * @param array $prismStep
+     * @return $this
+     */
+    public function addPrismStep(array $prismStep): self
+    {
+        // Create a step structure compatible with our format
+        $step = [
+            'text' => $prismStep['text'] ?? '',
+            'finish_reason' => $prismStep['finishReason'] ?? null,
+            'tool_calls' => [],
+            'tool_results' => [],
+            'additional_content' => $prismStep['additionalContent'] ?? [],
+        ];
+        
+        // Add tool calls if present
+        if (!empty($prismStep['toolCalls'])) {
+            $step['tool_calls'] = $prismStep['toolCalls'];
+            
+            // Also add to our allToolCalls array
+            foreach ($prismStep['toolCalls'] as $toolCall) {
+                if (is_object($toolCall) && get_class($toolCall) === 'Prism\Prism\ValueObjects\ToolCall') {
+                    $this->addPrismToolCall($toolCall);
+                }
+            }
+        }
+        
+        // Add tool results if present
+        if (!empty($prismStep['toolResults'])) {
+            $step['tool_results'] = $prismStep['toolResults'];
+        }
+        
+        // Add usage if present
+        if (isset($prismStep['usage'])) {
+            $step['usage'] = $prismStep['usage'];
+        }
+        
+        // Add the step
+        $this->steps[] = $step;
+        
+        return $this;
     }
 } 

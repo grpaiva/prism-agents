@@ -52,7 +52,6 @@ class AgentSpan extends Model
         'error' => 'array',
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
-        'created_at' => 'datetime',
         'duration_ms' => 'integer',
     ];
 
@@ -64,7 +63,6 @@ class AgentSpan extends Model
     protected $fillable = [
         'id',
         'object',
-        'created_at',
         'duration_ms',
         'started_at',
         'ended_at',
@@ -93,11 +91,6 @@ class AgentSpan extends Model
         if (!isset($attributes['started_at'])) {
             $attributes['started_at'] = now();
         }
-        
-        // Set created_at to started_at by default
-        if (!isset($attributes['created_at']) && isset($attributes['started_at'])) {
-            $attributes['created_at'] = $attributes['started_at'];
-        }
 
         parent::__construct($attributes);
     }
@@ -113,11 +106,6 @@ class AgentSpan extends Model
             // Ensure started_at is set when creating
             if (!$model->started_at) {
                 $model->started_at = now();
-            }
-            
-            // Set created_at to match started_at if not explicitly set
-            if (!$model->created_at) {
-                $model->created_at = $model->started_at;
             }
             
             // Format the ID if not set
@@ -264,5 +252,77 @@ class AgentSpan extends Model
     public function descendants()
     {
         return $this->children()->with('descendants');
+    }
+
+    /**
+     * Get tool call ID if this is a function/tool span
+     */
+    public function getToolCallIdAttribute()
+    {
+        if ($this->isFunctionSpan() && isset($this->span_data['tool_call_id'])) {
+            return $this->span_data['tool_call_id'];
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get the tool name if this is a function/tool span
+     */
+    public function getToolNameAttribute()
+    {
+        if ($this->isFunctionSpan() && isset($this->span_data['name'])) {
+            return $this->span_data['name'];
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get tool arguments if this is a function/tool span
+     */
+    public function getToolArgsAttribute()
+    {
+        if ($this->isFunctionSpan() && isset($this->span_data['input'])) {
+            return $this->span_data['input'];
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get tool result if this is a function/tool span
+     */
+    public function getToolResultAttribute()
+    {
+        if ($this->isFunctionSpan() && isset($this->span_data['output'])) {
+            return $this->span_data['output'];
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get the raw tool calls array if this is a response span
+     */
+    public function getToolCallsAttribute()
+    {
+        if ($this->isResponseSpan() && isset($this->span_data['tool_calls'])) {
+            return $this->span_data['tool_calls'];
+        }
+        
+        return [];
+    }
+
+    /**
+     * Get response text if this is a response span
+     */
+    public function getResponseTextAttribute()
+    {
+        if ($this->isResponseSpan() && isset($this->span_data['text'])) {
+            return $this->span_data['text'];
+        }
+        
+        return null;
     }
 } 

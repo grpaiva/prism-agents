@@ -50,7 +50,6 @@ class AgentTrace extends Model
      */
     protected $casts = [
         'metadata' => 'array',
-        'created_at' => 'datetime',
         'duration_ms' => 'integer',
         'handoff_count' => 'integer',
         'tool_count' => 'integer',
@@ -64,7 +63,6 @@ class AgentTrace extends Model
     protected $fillable = [
         'id',
         'object',
-        'created_at',
         'duration_ms',
         'workflow_name',
         'group_id',
@@ -96,11 +94,6 @@ class AgentTrace extends Model
             $this->setConnection($connection);
         }
 
-        // Set default timestamp for created_at if not provided
-        if (!isset($attributes['created_at'])) {
-            $attributes['created_at'] = now();
-        }
-
         parent::__construct($attributes);
     }
 
@@ -112,11 +105,6 @@ class AgentTrace extends Model
         parent::boot();
 
         static::creating(function ($model) {
-            // Ensure created_at is set when creating
-            if (!$model->created_at) {
-                $model->created_at = now();
-            }
-            
             // Format the ID if not set
             if (!$model->id) {
                 $model->id = 'trace_' . substr(md5(uniqid()), 0, 32);

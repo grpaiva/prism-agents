@@ -3,312 +3,327 @@
 @section('title', 'Trace Details')
 
 @section('content')
-<div class="mb-4">
-    <a href="{{ route('prism-agents.traces.index') }}" class="text-indigo-600 hover:text-indigo-900">← Back to Traces</a>
+<div class="flex items-center mb-6">
+    <a href="{{ route('prism-agents.traces.index') }}" class="text-indigo-600 hover:text-indigo-800 flex items-center">
+        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+        </svg>
+        Back to Traces
+    </a>
+    <h1 class="text-2xl font-semibold text-gray-900 ml-2">Trace Details</h1>
+    
+    <div class="ml-auto">
+        <button onclick="window.location.reload()" class="p-2 rounded-md hover:bg-gray-100" title="Refresh">
+            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+        </button>
+    </div>
 </div>
 
-<div class="mb-4 bg-white shadow sm:rounded-lg">
-    <div class="px-4 py-5 sm:px-6">
-        <div class="flex justify-between">
-            <div>
-                <h2 class="text-lg font-medium text-gray-900">
-                    {{ $trace->workflow_name ?? 'Trace' }}
-                </h2>
-                <p class="mt-1 text-sm text-gray-500">{{ $trace->id }}</p>
-            </div>
-            <div class="text-right">
-                <p class="text-sm text-gray-500">Created: {{ $trace->created_at->format('M j, Y g:i A') }}</p>
-                <p class="text-sm text-gray-500">Duration: {{ $trace->formatted_duration }}</p>
-            </div>
+<div class="bg-white shadow-md rounded-lg overflow-hidden mb-6">
+    <div class="grid grid-cols-4 gap-0">
+        <div class="p-4 border-r border-gray-200">
+            <div class="text-xs font-medium text-gray-500 uppercase">WORKFLOW</div>
+            <div class="mt-1 text-sm font-medium text-gray-900">{{ $trace->workflow_name ?? 'Unknown' }}</div>
+        </div>
+        <div class="p-4 border-r border-gray-200">
+            <div class="text-xs font-medium text-gray-500 uppercase">TRACE ID</div>
+            <div class="mt-1 text-sm font-medium text-gray-900 truncate" title="{{ $trace->id }}">{{ $trace->id }}</div>
+        </div>
+        <div class="p-4 border-r border-gray-200">
+            <div class="text-xs font-medium text-gray-500 uppercase">CREATED</div>
+            <div class="mt-1 text-sm font-medium text-gray-900">{{ $trace->created_at->format('M j, Y, g:i A') }}</div>
+        </div>
+        <div class="p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase">DURATION</div>
+            <div class="mt-1 text-sm font-medium text-gray-900">{{ $trace->formatted_duration ?? 'N/A' }}</div>
         </div>
     </div>
 </div>
 
-<div class="flex gap-4">
-    <!-- Timeline -->
-    <div class="flex-grow bg-white shadow sm:rounded-lg" x-data="{
-        expandedTraces: {},
-        selectedSpan: null,
-        
-        toggleExpand(traceId) {
-            this.expandedTraces[traceId] = !this.expandedTraces[traceId];
-        },
-        
-        selectSpan(span) {
-            this.selectedSpan = span;
-        },
-        
-        typeToIcon(type) {
-            const icons = {
-                'agent': '🤖',
-                'handoff': '🔄',
-                'function': '🛠️',
-                'response': '💬',
-                'llm_step': '💭',
-                'tool_call': '🧰'
-            };
-            return icons[type] || '📄';
-        },
-        
-        getPercentage(duration) {
-            return Math.min(100, Math.max(0.5, (duration / {{ $totalDuration }}) * 100));
-        }
-    }">
-        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h3 class="text-lg font-medium text-gray-900">Timeline</h3>
-            <p class="mt-1 text-sm text-gray-500">Execution spans and their relationships</p>
-        </div>
-        
-        <div class="overflow-auto" style="max-height: 70vh;">
-            <div class="divide-y divide-gray-200">
-                <template x-for="traceItem in {{ json_encode($hierarchicalSpans) }}" :key="traceItem.model.id">
-                    <div 
-                        :class="{ 
-                            'hidden': !traceItem.visible,
-                            'bg-indigo-50': selectedSpan && selectedSpan.id === traceItem.model.id
-                        }"
-                        class="hover:bg-gray-50 cursor-pointer"
-                        @click="selectSpan(traceItem.model)"
-                    >
-                        <div class="px-4 py-2">
-                            <div class="flex items-center">
-                                <!-- Indentation based on level -->
-                                <div :style="{ width: (traceItem.level * 20) + 'px' }" class="flex-shrink-0"></div>
-                                
-                                <!-- Expand/collapse icon if has children -->
-                                <div class="w-5 flex-shrink-0" @click.stop="toggleExpand(traceItem.model.id)">
-                                    <template x-if="traceItem.children.length > 0">
-                                        <svg :class="{ 'transform rotate-90': expandedTraces[traceItem.model.id] }" class="h-4 w-4 transition-transform duration-200" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
-                                        </svg>
-                                    </template>
-                                </div>
-                                
-                                <!-- Type icon -->
-                                <div class="w-7 text-center">
-                                    <span x-text="typeToIcon(traceItem.model.span_data?.type || '')"></span>
-                                </div>
-                                
-                                <!-- Name and duration -->
-                                <div class="ml-2 flex-1">
-                                    <div class="flex items-center justify-between">
-                                        <div>
-                                            <template x-if="traceItem.model.span_data?.type === 'agent'">
-                                                <span class="text-sm font-medium text-gray-900" x-text="traceItem.model.span_data?.name"></span>
-                                            </template>
-                                            
-                                            <template x-if="traceItem.model.span_data?.type === 'handoff'">
-                                                <span class="text-sm font-medium text-gray-900">
-                                                    <span x-text="traceItem.model.span_data?.from_agent"></span>
-                                                    <span class="text-gray-500 mx-1">→</span>
-                                                    <span x-text="traceItem.model.span_data?.to_agent"></span>
-                                                </span>
-                                            </template>
-                                            
-                                            <template x-if="traceItem.model.span_data?.type === 'function'">
-                                                <span class="text-sm font-medium text-gray-900" x-text="traceItem.model.span_data?.name || 'Function'"></span>
-                                            </template>
-                                            
-                                            <template x-if="traceItem.model.span_data?.type === 'response'">
-                                                <span class="text-sm font-medium text-gray-900">Response</span>
-                                            </template>
-                                            
-                                            <template x-if="!['agent', 'handoff', 'function', 'response'].includes(traceItem.model.span_data?.type)">
-                                                <span class="text-sm font-medium text-gray-900" x-text="traceItem.model.span_data?.name || traceItem.model.span_data?.type || 'Unknown'"></span>
-                                            </template>
-                                        </div>
-                                        <div class="text-xs text-gray-500" x-text="traceItem.model.duration_ms + ' ms'"></div>
-                                    </div>
-                                    <div class="mt-1 timeline-bar" :class="traceItem.model.span_data?.type">
-                                        <div 
-                                            class="timeline-progress" 
-                                            :style="{ width: getPercentage(traceItem.model.duration_ms) + '%' }"
-                                        ></div>
-                                    </div>
+<div class="grid grid-cols-3 gap-6">
+    <!-- Timeline (2/3 width) -->
+    <div class="col-span-2">
+        <div class="bg-white shadow-md rounded-lg p-4" x-data="{
+            selectedSpanId: null,
+            expandedItems: {},
+            selectSpan(spanId) {
+                this.selectedSpanId = spanId;
+            }
+        }">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Timeline</h3>
+            
+            <div class="space-y-4">
+                @foreach($trace->spans as $span)
+                    @php
+                        // Parse span_data JSON if it's a string
+                        if (is_string($span->span_data)) {
+                            $spanData = json_decode($span->span_data, true);
+                        } else {
+                            $spanData = $span->span_data ?? [];
+                        }
+                        
+                        // Extract type and name from span data
+                        $type = $spanData['type'] ?? 'unknown';
+                        $name = '';
+                        
+                        switch ($type) {
+                            case 'agent':
+                                $name = $spanData['name'] ?? 'Unknown Agent';
+                                break;
+                            case 'function':
+                                $name = $spanData['name'] ?? 'Unknown Function';
+                                $toolCallId = $spanData['tool_call_id'] ?? null;
+                                $input = $spanData['input'] ?? null;
+                                $output = $spanData['output'] ?? null;
+                                break;
+                            case 'response':
+                                $responseId = $spanData['response_id'] ?? null;
+                                $text = $spanData['text'] ?? '';
+                                $toolCalls = $spanData['tool_calls'] ?? [];
+                                break;
+                            case 'handoff':
+                                $fromAgent = $spanData['from_agent'] ?? 'Unknown';
+                                $toAgent = $spanData['to_agent'] ?? 'Unknown';
+                                $message = $spanData['message'] ?? null;
+                                break;
+                        }
+                        
+                        // Handle negative durations by using absolute value
+                        $durationMs = abs($span->duration_ms);
+                    @endphp
+                    
+                    <div class="relative" x-data="{ open: false }">
+                        <div class="flex items-center cursor-pointer" @click="open = !open; selectSpan('{{ $span->id }}')">
+                            <div class="mr-2 w-5 h-5 flex-shrink-0 rounded-full bg-gray-300 flex items-center justify-center">
+                                <div class="w-3 h-3 rounded-full bg-{{ $type === 'agent' ? 'purple' : ($type === 'function' ? 'blue' : ($type === 'handoff' ? 'green' : 'indigo')) }}-500"></div>
+                            </div>
+                            
+                            <div class="mr-2 text-sm text-gray-700">{{ number_format($durationMs) }} ms</div>
+                            
+                            <div class="flex-grow h-1 bg-gray-200 rounded">
+                                <div class="h-1 bg-{{ $type === 'agent' ? 'purple' : ($type === 'function' ? 'blue' : ($type === 'handoff' ? 'green' : 'indigo')) }}-500 rounded" 
+                                    style="width: {{ ($trace->duration_ms != 0) ? number_format((abs($durationMs) / abs($trace->duration_ms)) * 100) : 0 }}%;">
                                 </div>
                             </div>
+                            
+                            <div class="ml-2">
+                                <svg class="w-5 h-5 text-gray-400 transform transition-transform" 
+                                    :class="{'rotate-180': open}" 
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        
+                        <!-- Child Spans (if any) -->
+                        <div class="pl-7 mt-2 space-y-2" x-show="open" x-cloak>
+                            @if(isset($span->children) && count($span->children) > 0)
+                                @foreach($span->children as $childSpan)
+                                    @php
+                                        // Parse child span data
+                                        if (is_string($childSpan->span_data)) {
+                                            $childSpanData = json_decode($childSpan->span_data, true);
+                                        } else {
+                                            $childSpanData = $childSpan->span_data ?? [];
+                                        }
+                                        
+                                        $childType = $childSpanData['type'] ?? 'unknown';
+                                        $childDurationMs = abs($childSpan->duration_ms);
+                                    @endphp
+                                    
+                                    <div class="flex items-center cursor-pointer" @click.stop="selectSpan('{{ $childSpan->id }}')">
+                                        <div class="mr-2 w-4 h-4 flex-shrink-0 rounded-full bg-gray-300 flex items-center justify-center">
+                                            <div class="w-2 h-2 rounded-full bg-{{ $childType === 'agent' ? 'purple' : ($childType === 'function' ? 'blue' : 'gray') }}-500"></div>
+                                        </div>
+                                        
+                                        <div class="mr-2 text-sm text-gray-700">{{ number_format($childDurationMs) }} ms</div>
+                                        
+                                        <div class="flex-grow h-1 bg-gray-200 rounded">
+                                            <div class="h-1 bg-{{ $childType === 'agent' ? 'purple' : ($childType === 'function' ? 'blue' : 'gray') }}-500 rounded" 
+                                                style="width: {{ ($trace->duration_ms != 0) ? number_format((abs($childDurationMs) / abs($trace->duration_ms)) * 100) : 0 }}%;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            @else
+                                <div class="text-sm text-gray-500">No child spans</div>
+                            @endif
                         </div>
                     </div>
-                </template>
+                @endforeach
             </div>
         </div>
     </div>
     
-    <!-- Span details -->
-    <div class="w-1/3 bg-white shadow sm:rounded-lg">
-        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h3 class="text-lg font-medium text-gray-900">Details</h3>
-            <p class="mt-1 text-sm text-gray-500">Select a span to view details</p>
-        </div>
-        
-        <div class="p-4 overflow-auto" style="max-height: 70vh;">
-            <template x-if="!selectedSpan">
-                <div class="text-center py-6 text-gray-500">
+    <!-- Details Panel (1/3 width) -->
+    <div class="col-span-1">
+        <div class="bg-white shadow-md rounded-lg p-4" x-data="{
+            selectedSpanId: null
+        }">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Details</h3>
+            
+            <template x-if="!selectedSpanId">
+                <div class="text-gray-500 text-sm p-4 bg-gray-50 rounded-md">
                     Select a span from the timeline to view its details
                 </div>
             </template>
             
-            <template x-if="selectedSpan">
-                <div>
-                    <!-- Basic information -->
+            @foreach($trace->spans as $span)
+                @php
+                    // Parse span_data JSON if it's a string
+                    if (is_string($span->span_data)) {
+                        $spanData = json_decode($span->span_data, true);
+                    } else {
+                        $spanData = $span->span_data ?? [];
+                    }
+                    
+                    // Extract type and name from span data
+                    $type = $spanData['type'] ?? 'unknown';
+                    $durationMs = abs($span->duration_ms);
+                @endphp
+                
+                <div x-show="selectedSpanId === '{{ $span->id }}'" x-cloak>
                     <div class="mb-4">
-                        <h4 class="text-base font-medium text-gray-900 mb-2">Overview</h4>
-                        <div class="bg-gray-50 p-3 rounded border border-gray-200 text-sm">
-                            <div class="mb-2">
-                                <span class="text-gray-500">ID:</span>
-                                <span class="text-gray-900" x-text="selectedSpan.id"></span>
-                            </div>
-                            
-                            <div class="mb-2">
-                                <span class="text-gray-500">Type:</span>
-                                <span class="text-gray-900" x-text="selectedSpan.span_data?.type"></span>
-                            </div>
-                            
-                            <div class="mb-2">
-                                <span class="text-gray-500">Started:</span>
-                                <span class="text-gray-900" x-text="new Date(selectedSpan.started_at).toLocaleString()"></span>
-                            </div>
-                            
-                            <div class="mb-2">
-                                <span class="text-gray-500">Duration:</span>
-                                <span class="text-gray-900" x-text="selectedSpan.duration_ms + ' ms'"></span>
-                            </div>
-                        </div>
+                        <div class="text-xs font-medium text-gray-500 uppercase mb-1">TYPE</div>
+                        <div class="text-sm font-medium text-gray-900">{{ ucfirst($type) }}</div>
                     </div>
                     
-                    <!-- Span content based on type -->
-                    <template x-if="selectedSpan.span_data">
-                        <div class="mb-4">
-                            <h4 class="text-base font-medium text-gray-900 mb-2">Content</h4>
-                            <div class="bg-gray-50 p-3 rounded border border-gray-200 text-sm">
-                                <!-- Agent -->
-                                <template x-if="selectedSpan.span_data.type === 'agent'">
-                                    <div>
-                                        <div class="mb-2">
-                                            <span class="text-gray-500">Agent Name:</span>
-                                            <span class="text-gray-900" x-text="selectedSpan.span_data.name"></span>
-                                        </div>
-                                        
-                                        <template x-if="selectedSpan.span_data.tools && selectedSpan.span_data.tools.length > 0">
-                                            <div class="mb-2">
-                                                <div class="text-gray-500">Tools:</div>
-                                                <div class="mt-1">
-                                                    <template x-for="tool in selectedSpan.span_data.tools" :key="tool">
-                                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-1 mb-1">
-                                                            <span x-text="tool"></span>
-                                                        </span>
-                                                    </template>
-                                                </div>
-                                            </div>
-                                        </template>
-                                        
-                                        <template x-if="selectedSpan.span_data.handoffs && selectedSpan.span_data.handoffs.length > 0">
-                                            <div class="mb-2">
-                                                <div class="text-gray-500">Handoffs:</div>
-                                                <div class="mt-1">
-                                                    <template x-for="handoff in selectedSpan.span_data.handoffs" :key="handoff">
-                                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mr-1 mb-1">
-                                                            <span x-text="handoff"></span>
-                                                        </span>
-                                                    </template>
-                                                </div>
-                                            </div>
-                                        </template>
-                                    </div>
-                                </template>
-                                
-                                <!-- Function -->
-                                <template x-if="selectedSpan.span_data.type === 'function'">
-                                    <div>
-                                        <div class="mb-2">
-                                            <span class="text-gray-500">Function Name:</span>
-                                            <span class="text-gray-900" x-text="selectedSpan.span_data.name"></span>
-                                        </div>
-                                        
-                                        <template x-if="selectedSpan.span_data.input">
-                                            <div class="mb-2">
-                                                <div class="text-gray-500">Input:</div>
-                                                <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="typeof selectedSpan.span_data.input === 'string' ? selectedSpan.span_data.input : JSON.stringify(selectedSpan.span_data.input, null, 2)"></div>
-                                            </div>
-                                        </template>
-                                        
-                                        <template x-if="selectedSpan.span_data.output">
-                                            <div class="mb-2">
-                                                <div class="text-gray-500">Output:</div>
-                                                <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.span_data.output"></div>
-                                            </div>
-                                        </template>
-                                    </div>
-                                </template>
-                                
-                                <!-- Handoff -->
-                                <template x-if="selectedSpan.span_data.type === 'handoff'">
-                                    <div>
-                                        <div class="mb-2">
-                                            <span class="text-gray-500">From Agent:</span>
-                                            <span class="text-gray-900" x-text="selectedSpan.span_data.from_agent"></span>
-                                        </div>
-                                        
-                                        <div class="mb-2">
-                                            <span class="text-gray-500">To Agent:</span>
-                                            <span class="text-gray-900" x-text="selectedSpan.span_data.to_agent"></span>
-                                        </div>
-                                    </div>
-                                </template>
-                            </div>
-                        </div>
-                    </template>
+                    <div class="mb-4">
+                        <div class="text-xs font-medium text-gray-500 uppercase mb-1">DURATION</div>
+                        <div class="text-sm font-medium text-gray-900">{{ number_format($durationMs) }} ms</div>
+                    </div>
                     
-                    <!-- Error information if present -->
-                    <template x-if="selectedSpan.error">
+                    @if($type === 'agent')
                         <div class="mb-4">
-                            <h4 class="text-base font-medium text-red-600 mb-2">Error</h4>
-                            <div class="bg-red-50 p-3 rounded border border-red-200 text-sm">
-                                <div class="mb-2">
-                                    <span class="text-red-600" x-text="selectedSpan.error.message"></span>
-                                </div>
-                                
-                                <template x-if="selectedSpan.error.data">
-                                    <div class="text-gray-800 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-red-300" x-text="JSON.stringify(selectedSpan.error.data, null, 2)"></div>
-                                </template>
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">AGENT</div>
+                            <div class="text-sm font-medium text-gray-900">{{ $spanData['name'] ?? 'Unknown' }}</div>
+                        </div>
+                        
+                        @if(isset($spanData['output_type']))
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">OUTPUT TYPE</div>
+                            <div class="text-sm font-medium text-gray-900">{{ $spanData['output_type'] }}</div>
+                        </div>
+                        @endif
+                        
+                        @if(isset($spanData['tools']) && count($spanData['tools']) > 0)
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">AVAILABLE TOOLS</div>
+                            <div class="text-sm text-gray-900">
+                                @foreach($spanData['tools'] as $tool)
+                                    <div class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700 mr-1 mb-1">
+                                        {{ is_array($tool) ? ($tool['name'] ?? 'Unknown') : $tool }}
+                                    </div>
+                                @endforeach
                             </div>
                         </div>
-                    </template>
+                        @endif
+                    @endif
+                    
+                    @if($type === 'function')
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">FUNCTION</div>
+                            <div class="text-sm font-medium text-gray-900">{{ $spanData['name'] ?? 'Unknown' }}</div>
+                        </div>
+                        
+                        @if(isset($spanData['tool_call_id']))
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">TOOL CALL ID</div>
+                            <div class="text-sm font-medium text-gray-900 break-all">{{ $spanData['tool_call_id'] }}</div>
+                        </div>
+                        @endif
+                        
+                        @if(isset($spanData['input']))
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">INPUT</div>
+                            <div class="text-sm text-gray-900 bg-gray-50 p-2 rounded border border-gray-200 max-h-64 overflow-y-auto">
+                                <pre class="whitespace-pre-wrap">{{ is_array($spanData['input']) ? json_encode($spanData['input'], JSON_PRETTY_PRINT) : $spanData['input'] }}</pre>
+                            </div>
+                        </div>
+                        @endif
+                        
+                        @if(isset($spanData['output']))
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">OUTPUT</div>
+                            <div class="text-sm text-gray-900 bg-gray-50 p-2 rounded border border-gray-200 max-h-64 overflow-y-auto">
+                                <pre class="whitespace-pre-wrap">{{ is_array($spanData['output']) ? json_encode($spanData['output'], JSON_PRETTY_PRINT) : $spanData['output'] }}</pre>
+                            </div>
+                        </div>
+                        @endif
+                    @endif
+                    
+                    @if($type === 'response')
+                        @if(isset($spanData['response_id']))
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">RESPONSE ID</div>
+                            <div class="text-sm font-medium text-gray-900 break-all">{{ $spanData['response_id'] }}</div>
+                        </div>
+                        @endif
+                        
+                        @if(isset($spanData['text']) && !empty($spanData['text']))
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">TEXT</div>
+                            <div class="text-sm text-gray-900 bg-gray-50 p-2 rounded border border-gray-200 max-h-64 overflow-y-auto">
+                                <pre class="whitespace-pre-wrap">{{ $spanData['text'] }}</pre>
+                            </div>
+                        </div>
+                        @endif
+                        
+                        @if(isset($spanData['tool_calls']) && count($spanData['tool_calls']) > 0)
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">TOOL CALLS</div>
+                            <div class="space-y-2">
+                                @foreach($spanData['tool_calls'] as $toolCall)
+                                    <div class="text-sm text-gray-900 bg-gray-50 p-2 rounded border border-gray-200">
+                                        <div class="font-medium">{{ $toolCall['name'] ?? 'Unknown Tool' }}</div>
+                                        <div class="text-xs text-gray-500 break-all">ID: {{ $toolCall['id'] ?? 'Unknown' }}</div>
+                                        @if(isset($toolCall['args']) && !empty($toolCall['args']))
+                                            <div class="mt-1 text-xs">
+                                                <div class="font-medium text-gray-500">Arguments:</div>
+                                                <pre class="whitespace-pre-wrap text-gray-900">{{ is_array($toolCall['args']) ? json_encode($toolCall['args'], JSON_PRETTY_PRINT) : $toolCall['args'] }}</pre>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                        @endif
+                    @endif
+                    
+                    @if($type === 'handoff')
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">FROM</div>
+                            <div class="text-sm font-medium text-gray-900">{{ $spanData['from_agent'] ?? 'Unknown' }}</div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">TO</div>
+                            <div class="text-sm font-medium text-gray-900">{{ $spanData['to_agent'] ?? 'Unknown' }}</div>
+                        </div>
+                        
+                        @if(isset($spanData['message']))
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-gray-500 uppercase mb-1">MESSAGE</div>
+                            <div class="text-sm text-gray-900 bg-gray-50 p-2 rounded border border-gray-200 max-h-64 overflow-y-auto">
+                                <pre class="whitespace-pre-wrap">{{ $spanData['message'] }}</pre>
+                            </div>
+                        </div>
+                        @endif
+                    @endif
+                    
+                    @if(isset($spanData['error']) && $spanData['error'])
+                        <div class="mb-4">
+                            <div class="text-xs font-medium text-red-500 uppercase mb-1">ERROR</div>
+                            <div class="text-sm text-red-600 bg-red-50 p-2 rounded border border-red-100 max-h-64 overflow-y-auto">
+                                <pre class="whitespace-pre-wrap">{{ is_array($spanData['error']) ? json_encode($spanData['error'], JSON_PRETTY_PRINT) : $spanData['error'] }}</pre>
+                            </div>
+                        </div>
+                    @endif
                 </div>
-            </template>
+            @endforeach
         </div>
     </div>
 </div>
-@endsection
-
-@section('scripts')
-<style>
-    .timeline-bar {
-        height: 4px;
-        background-color: #e5e7eb;
-        border-radius: 2px;
-        overflow: hidden;
-    }
-    .timeline-progress {
-        height: 100%;
-        background-color: #6366f1;
-        border-radius: 2px;
-    }
-    
-    .timeline-bar.agent .timeline-progress {
-        background-color: #6366f1; /* indigo-500 */
-    }
-    
-    .timeline-bar.handoff .timeline-progress {
-        background-color: #84cc16; /* lime-500 */
-    }
-    
-    .timeline-bar.function .timeline-progress {
-        background-color: #f97316; /* orange-500 */
-    }
-    
-    .timeline-bar.response .timeline-progress {
-        background-color: #14b8a6; /* teal-500 */
-    }
-</style>
 @endsection 

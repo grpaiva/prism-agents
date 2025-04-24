@@ -48,14 +48,14 @@ class Trace
 
     /**
      * Optional trace name
-     * 
+     *
      * @var string|null
      */
     protected ?string $name = null;
 
     /**
      * The AgentTrace model instance
-     *
+     * 
      * @var AgentTrace|null
      */
     protected ?AgentTrace $traceModel = null;
@@ -119,13 +119,13 @@ class Trace
             return true;
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error("Error verifying trace tables: " . $e->getMessage(), [
-                'connection' => $this->connection,
+                    'connection' => $this->connection,
                 'exception' => $e
-            ]);
-            
+                ]);
+                
             // Disable tracing on error
-            $this->enabled = false;
-            return false;
+                $this->enabled = false;
+                return false;
         }
     }
 
@@ -148,7 +148,6 @@ class Trace
             if (!$this->traceModel) {
                 $this->traceModel = new AgentTrace([
                     'id' => $this->traceId,
-                    'created_at' => now(),
                     'workflow_name' => $this->name,
                 ]);
                 
@@ -210,24 +209,27 @@ class Trace
             $trace = new static($traceModel->id);
         }
         
-        // Load the spans from the database
+        // Load the spans from the database using the relationship
         try {
-            $spans = AgentSpan::where('trace_id', $trace->traceId)
-                ->orderBy('started_at')
-                ->get();
+            if ($trace->traceModel) {
+                // Use eager loading to get all spans with a single query
+                $trace->traceModel->load('spans');
                 
-            foreach ($spans as $span) {
-                $trace->spans[$span->id] = [
-                    'id' => $span->id,
-                    'trace_id' => $span->trace_id,
-                    'parent_id' => $span->parent_id,
-                    'name' => $span->agent_name,
-                    'type' => $span->span_type,
-                    'started_at' => $span->started_at,
-                    'ended_at' => $span->ended_at,
-                    'duration' => $span->duration_ms,
-                    'metadata' => $span->span_data ?? [],
-                ];
+                // Build the spans array from the loaded spans
+                foreach ($trace->traceModel->spans as $span) {
+                    $trace->spans[$span->id] = [
+                        'id' => $span->id,
+                        'trace_id' => $span->trace_id,
+                        'parent_id' => $span->parent_id,
+                        'name' => $span->agent_name ?? $span->tool_name ?? null,
+                        'type' => $span->span_type,
+                        'started_at' => $span->started_at,
+                        'ended_at' => $span->ended_at,
+                        'duration' => $span->duration_ms,
+                        'span_data' => $span->span_data,
+                        'error' => $span->error,
+                    ];
+                }
             }
             
             return $trace;
@@ -240,27 +242,56 @@ class Trace
     /**
      * Add a result to the trace
      *
-     * @param AgentResult $result
+     * @param mixed $result AgentResult or string
      * @return $this
      */
-    public function addResult(AgentResult $result): self
+    public function addResult($result): self
     {
         if (!$this->enabled) {
             return $this;
         }
 
+        // Make sure we have an AgentResult object
+        if (!$result instanceof AgentResult) {
+            \Illuminate\Support\Facades\Log::error("Invalid result type passed to Trace::addResult", [
+                'expected' => AgentResult::class,
+                'got' => is_object($result) ? get_class($result) : gettype($result),
+            ]);
+            
+            // Try to create a fallback AgentResult
+            if (is_string($result)) {
+                $fallbackResult = AgentResult::create();
+                $fallbackResult->setOutput($result);
+                $result = $fallbackResult;
+            } elseif (is_array($result) && isset($result['text'])) {
+                $fallbackResult = AgentResult::create();
+                $fallbackResult->setOutput($result['text']);
+                $fallbackResult->setMetadata($result);
+                $result = $fallbackResult;
+            } else {
+                // If we can't make sense of the result, log and return
+                \Illuminate\Support\Facades\Log::error("Could not create fallback AgentResult", [
+                    'result' => $result,
+                ]);
+                return $this;
+            }
+        }
+
+        // Get the agent name (with fallback for missing agent)
+        $agentName = $result->getAgent() ? $result->getAgent()->getName() : 'unknown_agent';
+        
         // Create a root span for the agent execution
-        $spanId = $this->startSpan($result->getAgent()->getName(), 'agent_execution');
+        $spanId = $this->startSpan($agentName, 'agent_execution');
         
         // Add metadata about the agent
         $this->updateSpan($spanId, [
-            'agent' => $result->getAgent()->getName(),
+            'agent' => $agentName,
             'provider' => $result->getProvider(),
             'model' => $result->getModel(),
-            'input' => $result->getInput(),
+                'input' => $result->getInput(),
             'metadata' => $result->getMetadata(),
-            'steps' => $result->getSteps(),
-            'tool_calls' => $result->getAllToolCalls(),
+                'steps' => $result->getSteps(),
+            'tool_calls' => $this->convertToolCalls($result->getAllToolCalls()),
             'system_message' => $result->getSystemMessage(),
             'output' => $result->getOutput(),
             'status' => $result->isSuccessful() ? 'success' : 'error',
@@ -270,28 +301,66 @@ class Trace
         // Add step spans
         foreach ($result->getSteps() as $index => $step) {
             $stepSpanId = $this->startSpan("step_{$index}", 'llm_step', $spanId);
+            
+            // Store the raw tool calls for reference - convert objects to arrays if needed
+            $toolCallsData = !empty($step['tool_calls']) ? $this->convertToolCalls($step['tool_calls']) : [];
+            
             $this->updateSpan($stepSpanId, [
                 'step_index' => $index,
-                'agent' => $result->getAgent()->getName(),
-                'text' => $step['text'],
-                'finish_reason' => $step['finish_reason'],
-                'tools' => collect($step['tool_calls'])->pluck('name')->unique()->values()->toArray(),
-                'additional_content' => $step['additional_content'],
+                'agent' => $agentName,
+                        'text' => $step['text'] ?? '',
+                'finish_reason' => $step['finish_reason'] ?? $step['finishReason'] ?? null,
+                'tools' => $this->extractToolNames($step['tool_calls'] ?? []),
+                'tool_calls' => $toolCallsData, // Store the complete tool call data
+                        'additional_content' => $step['additional_content'] ?? [],
             ]);
             
-            // Add tool call spans
-            foreach ($step['tool_results'] as $toolIdx => $toolResult) {
-                $toolSpanId = $this->startSpan("tool_{$toolResult['toolName']}_{$toolIdx}", 'handoff', $stepSpanId);
-                $this->updateSpan($toolSpanId, [
-                    'tool_name' => $toolResult['toolName'],
-                    'args' => $toolResult['args'],
-                    'result' => $toolResult['result'],
-                ]);
-                
-                $this->endSpan($toolSpanId);
+            // Track tool calls by ID for easier reference
+            $toolCallsById = [];
+            if (!empty($step['tool_calls'])) {
+                foreach ($step['tool_calls'] as $toolCall) {
+                    $toolCallId = $this->getToolCallId($toolCall);
+                    if ($toolCallId) {
+                        $toolCallsById[$toolCallId] = $toolCall;
+                    }
+                }
             }
             
-            $this->endSpan($stepSpanId);
+            // Add tool call spans
+                if (!empty($step['tool_results'])) {
+                    foreach ($step['tool_results'] as $toolIdx => $toolResult) {
+                    // Extract data from the tool result which might be an object or array
+                    $toolCallId = $this->getToolResultId($toolResult);
+                    $toolName = $this->getToolResultName($toolResult);
+                    $args = $this->getToolResultArgs($toolResult);
+                    $result = $this->getToolResultOutput($toolResult);
+                    
+                    // Create a more specific name if we have the tool call ID
+                    $spanName = $toolCallId ? "tool_{$toolName}_{$toolCallId}" : "tool_{$toolName}_{$toolIdx}";
+                    
+                    // Create span with tool_call type (representing a model->tool handoff)
+                    $toolSpanId = $this->startSpan($spanName, 'tool_call', $stepSpanId);
+                    
+                    // Enhanced metadata for the tool call
+                    $toolMetadata = [
+                        'tool_name' => $toolName,
+                        'tool_call_id' => $toolCallId,
+                        'args' => $args,
+                        'result' => $result,
+                    ];
+                    
+                    // If we found a matching tool call with more details, include that
+                    if ($toolCallId && isset($toolCallsById[$toolCallId])) {
+                        $toolMetadata['original_tool_call'] = $this->convertToolCallToArray($toolCallsById[$toolCallId]);
+                    }
+                    
+                    $this->updateSpan($toolSpanId, $toolMetadata);
+                    
+                        $this->endSpan($toolSpanId);
+                    }
+                }
+                
+                $this->endSpan($stepSpanId);
         }
         
         // End the root span
@@ -303,8 +372,207 @@ class Trace
             $this->traceModel->calculateDuration();
             $this->traceModel->save();
         }
-        
+
         return $this;
+    }
+
+    /**
+     * Convert tool calls to arrays for storage
+     * 
+     * @param array $toolCalls Array of tool calls which might be objects or arrays
+     * @return array Normalized array of tool calls
+     */
+    protected function convertToolCalls(array $toolCalls): array
+    {
+        $result = [];
+        
+        foreach ($toolCalls as $toolCall) {
+            $result[] = $this->convertToolCallToArray($toolCall);
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Convert a single tool call to an array
+     * 
+     * @param mixed $toolCall Tool call object or array
+     * @return array Normalized tool call array
+     */
+    protected function convertToolCallToArray($toolCall): array
+    {
+        // If it's already an array, return it
+        if (is_array($toolCall)) {
+            return $toolCall;
+        }
+        
+        // If it's an object with a toArray method, use that
+        if (is_object($toolCall) && method_exists($toolCall, 'toArray')) {
+            return $toolCall->toArray();
+        }
+        
+        // If it's a Prism\Prism\ValueObjects\ToolCall object
+        if (is_object($toolCall) && get_class($toolCall) === 'Prism\Prism\ValueObjects\ToolCall') {
+            return [
+                'id' => $toolCall->id ?? null,
+                'name' => $toolCall->name ?? null,
+                'args' => $toolCall->args ?? [],
+            ];
+        }
+        
+        // For any other object, convert public properties to an array
+        if (is_object($toolCall)) {
+            return get_object_vars($toolCall);
+        }
+        
+        // Fallback to empty array
+        return [];
+    }
+
+    /**
+     * Extract tool names from tool calls
+     * 
+     * @param array $toolCalls Array of tool calls
+     * @return array Array of unique tool names
+     */
+    protected function extractToolNames(array $toolCalls): array
+    {
+        $names = [];
+        
+        foreach ($toolCalls as $toolCall) {
+            $name = $this->getToolCallName($toolCall);
+            if ($name) {
+                $names[] = $name;
+            }
+        }
+        
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * Get tool call ID from a tool call object or array
+     * 
+     * @param mixed $toolCall
+     * @return string|null
+     */
+    protected function getToolCallId($toolCall): ?string
+    {
+        if (is_array($toolCall)) {
+            return $toolCall['id'] ?? null;
+        }
+        
+        if (is_object($toolCall)) {
+            if (isset($toolCall->id)) {
+                return $toolCall->id;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get tool call name from a tool call object or array
+     * 
+     * @param mixed $toolCall
+     * @return string|null
+     */
+    protected function getToolCallName($toolCall): ?string
+    {
+        if (is_array($toolCall)) {
+            return $toolCall['name'] ?? null;
+        }
+        
+        if (is_object($toolCall)) {
+            if (isset($toolCall->name)) {
+                return $toolCall->name;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get tool result ID from a tool result object or array
+     * 
+     * @param mixed $toolResult
+     * @return string|null
+     */
+    protected function getToolResultId($toolResult): ?string
+    {
+        if (is_array($toolResult)) {
+            return $toolResult['toolCallId'] ?? null;
+        }
+        
+        if (is_object($toolResult)) {
+            if (isset($toolResult->toolCallId)) {
+                return $toolResult->toolCallId;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get tool result name from a tool result object or array
+     * 
+     * @param mixed $toolResult
+     * @return string|null
+     */
+    protected function getToolResultName($toolResult): ?string
+    {
+        if (is_array($toolResult)) {
+            return $toolResult['toolName'] ?? null;
+        }
+        
+        if (is_object($toolResult)) {
+            if (isset($toolResult->toolName)) {
+                return $toolResult->toolName;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get tool result arguments from a tool result object or array
+     * 
+     * @param mixed $toolResult
+     * @return array
+     */
+    protected function getToolResultArgs($toolResult): array
+    {
+        if (is_array($toolResult)) {
+            return $toolResult['args'] ?? [];
+        }
+        
+        if (is_object($toolResult)) {
+            if (isset($toolResult->args)) {
+                return is_array($toolResult->args) ? $toolResult->args : [];
+            }
+        }
+        
+        return [];
+    }
+
+    /**
+     * Get tool result output from a tool result object or array
+     * 
+     * @param mixed $toolResult
+     * @return mixed
+     */
+    protected function getToolResultOutput($toolResult)
+    {
+        if (is_array($toolResult)) {
+            return $toolResult['result'] ?? null;
+        }
+        
+        if (is_object($toolResult)) {
+            if (isset($toolResult->result)) {
+                return $toolResult->result;
+            }
+        }
+        
+        return null;
     }
 
     /**
@@ -353,6 +621,7 @@ class Trace
                 $spanData = [
                     'type' => 'function',
                     'name' => $name,
+                    'tool_call_id' => $metadata['tool_call_id'] ?? null,
                     'input' => $metadata['args'] ?? null,
                     'output' => $metadata['result'] ?? null,
                 ];
@@ -362,6 +631,7 @@ class Trace
                 $spanData = [
                     'type' => 'response',
                     'response_id' => 'resp_' . substr(md5($spanId), 0, 40),
+                    'tool_calls' => $metadata['tool_calls'] ?? [],
                 ];
                 break;
                 
@@ -378,7 +648,6 @@ class Trace
                 'parent_id' => $parentId,
                 'span_data' => $spanData,
                 'started_at' => $now,
-                'created_at' => $now,
             ]);
             
             if ($this->connection) {
@@ -447,7 +716,7 @@ class Trace
                     // Extract tools from metadata
                     if (!empty($metadata['tool_calls'])) {
                         $spanData['tools'] = collect($metadata['tool_calls'])
-                            ->pluck('toolName')
+                            ->pluck('name')
                             ->unique()
                             ->values()
                             ->toArray();
@@ -459,12 +728,39 @@ class Trace
                 else if ($span->isFunctionSpan()) {
                     // Update function input/output if applicable
                     $spanData = $span->span_data;
+                    
                     if (isset($metadata['args'])) {
                         $spanData['input'] = json_encode($metadata['args']);
                     }
+                    
                     if (isset($metadata['result'])) {
                         $spanData['output'] = $this->truncateText($metadata['result']);
                     }
+                    
+                    // Store tool call ID if provided
+                    if (isset($metadata['tool_call_id'])) {
+                        $spanData['tool_call_id'] = $metadata['tool_call_id'];
+                    }
+                    
+                    // Store original tool call data if provided
+                    if (isset($metadata['original_tool_call'])) {
+                        $spanData['original_tool_call'] = $metadata['original_tool_call'];
+                    }
+                    
+                    $span->span_data = $spanData;
+                }
+                else if ($span->isResponseSpan()) {
+                    // Update response span with tool calls if provided
+                    $spanData = $span->span_data;
+                    
+                    if (isset($metadata['tool_calls'])) {
+                        $spanData['tool_calls'] = $metadata['tool_calls'];
+                    }
+                    
+                    if (isset($metadata['text'])) {
+                        $spanData['text'] = $metadata['text'];
+                    }
+                    
                     $span->span_data = $spanData;
                 }
                 
@@ -565,7 +861,7 @@ class Trace
         
         return $this;
     }
-
+    
     /**
      * Truncate text to a maximum length for database storage
      * 
@@ -632,5 +928,325 @@ class Trace
     public function isSpanActive(string $spanId): bool
     {
         return in_array($spanId, $this->activeSpans);
+    }
+
+    /**
+     * Create a new trace with a specified group ID
+     * 
+     * @param string $name Trace name
+     * @param string|null $groupId Optional group ID to associate with this trace
+     * @return static
+     */
+    public static function withGroup(string $name, ?string $groupId = null): static
+    {
+        $instance = self::as($name);
+        
+        if ($groupId && $instance->traceModel) {
+            $instance->traceModel->group_id = $groupId;
+            $instance->traceModel->save();
+        }
+        
+        return $instance;
+    }
+
+    /**
+     * Set metadata for this trace
+     * 
+     * @param array $metadata Metadata to store with the trace
+     * @return $this
+     */
+    public function withMetadata(array $metadata): self
+    {
+        if (!$this->enabled || !$this->traceModel) {
+            return $this;
+        }
+        
+        try {
+            $this->traceModel->metadata = $metadata;
+            $this->traceModel->save();
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Error setting trace metadata: " . $e->getMessage(), [
+                'trace_id' => $this->traceId,
+                'exception' => $e
+            ]);
+        }
+        
+        return $this;
+    }
+
+    /**
+     * Get traces associated with a specific group ID
+     * 
+     * @param string $groupId The group ID to search for
+     * @return \Illuminate\Support\Collection
+     */
+    public static function getTracesByGroup(string $groupId): \Illuminate\Support\Collection
+    {
+        return AgentTrace::where('group_id', $groupId)
+            ->orderBy('created_at', 'desc')
+            ->get();
+    }
+
+    /**
+     * Get the associated AgentTrace model
+     * 
+     * @return AgentTrace|null
+     */
+    public function getTraceModel(): ?AgentTrace
+    {
+        return $this->traceModel;
+    }
+
+    /**
+     * Get hierarchical structure of spans
+     * 
+     * @return array
+     */
+    public function getHierarchicalSpans(): array
+    {
+        if (!$this->traceModel) {
+            return [];
+        }
+        
+        return $this->traceModel->getSpanHierarchy();
+    }
+
+    /**
+     * Get flattened hierarchical structure of spans with visibility information
+     * 
+     * @return array
+     */
+    public function getFlattenedHierarchy(): array
+    {
+        if (!$this->traceModel) {
+            return [];
+        }
+        
+        return $this->traceModel->getFlattenedSpanHierarchy();
+    }
+
+    /**
+     * Get spans by type
+     * 
+     * @param string $type The span type to filter by
+     * @return \Illuminate\Support\Collection
+     */
+    public function getSpansByType(string $type): \Illuminate\Support\Collection
+    {
+        if (!$this->traceModel) {
+            return collect([]);
+        }
+        
+        $typeMap = [
+            'agent' => 'agentSpans',
+            'function' => 'functionSpans',
+            'tool' => 'functionSpans',
+            'handoff' => 'handoffSpans',
+            'response' => 'responseSpans',
+        ];
+        
+        $method = $typeMap[$type] ?? null;
+        
+        if (!$method) {
+            return collect([]);
+        }
+        
+        return $this->traceModel->$method()->get();
+    }
+
+    /**
+     * Get statistics about this trace
+     * 
+     * @return array
+     */
+    public function getStatistics(): array
+    {
+        if (!$this->traceModel) {
+            return [
+                'duration_ms' => 0,
+                'handoff_count' => 0,
+                'tool_count' => 0,
+                'span_count' => 0,
+                'agent_count' => 0,
+            ];
+        }
+        
+        // Make sure counts are updated
+        $this->traceModel->calculateCounts();
+        $this->traceModel->calculateDuration();
+        
+        return [
+            'duration_ms' => $this->traceModel->duration_ms,
+            'handoff_count' => $this->traceModel->handoff_count,
+            'tool_count' => $this->traceModel->tool_count,
+            'span_count' => $this->traceModel->spans()->count(),
+            'agent_count' => count($this->traceModel->first_5_agents),
+        ];
+    }
+
+    /**
+     * Add a handoff span between two agents
+     * 
+     * @param string $fromAgent Name of the source agent
+     * @param string $toAgent Name of the target agent
+     * @param string|null $parentId Optional parent span ID
+     * @param array $metadata Additional metadata
+     * @return string The ID of the new span
+     */
+    public function addHandoff(string $fromAgent, string $toAgent, ?string $parentId = null, array $metadata = []): string
+    {
+        $handoffMetadata = array_merge($metadata, [
+            'from_agent' => $fromAgent,
+            'to_agent' => $toAgent,
+        ]);
+        
+        $spanId = $this->startSpan("handoff_{$fromAgent}_to_{$toAgent}", 'handoff', $parentId, $handoffMetadata);
+        return $spanId;
+    }
+
+    /**
+     * Format trace data for API response
+     * 
+     * @return array
+     */
+    public function toApiFormat(): array
+    {
+        if (!$this->traceModel) {
+            return [
+                'id' => $this->traceId,
+                'object' => 'trace',
+                'created_at' => now()->toIso8601String(),
+            ];
+        }
+        
+        return [
+            'id' => $this->traceModel->id,
+            'object' => $this->traceModel->object,
+            'created_at' => $this->traceModel->created_at->toIso8601String(),
+            'duration_ms' => $this->traceModel->duration_ms,
+            'workflow_name' => $this->traceModel->workflow_name,
+            'group_id' => $this->traceModel->group_id,
+            'handoff_count' => $this->traceModel->handoff_count,
+            'tool_count' => $this->traceModel->tool_count,
+            'metadata' => $this->traceModel->metadata,
+        ];
+    }
+
+    /**
+     * Extract agent metadata from the OpenAI format
+     * 
+     * @param array $responseData Response data from OpenAI
+     * @return array
+     */
+    protected function extractAgentMetadata(array $responseData): array
+    {
+        $metadata = [
+            'model' => $responseData['meta']['model'] ?? null,
+        ];
+        
+        // Extract usage data if available
+        if (!empty($responseData['usage'])) {
+            $metadata['usage'] = $responseData['usage'];
+        }
+        
+        // Extract completion ID
+        if (!empty($responseData['meta']['id'])) {
+            $metadata['completion_id'] = $responseData['meta']['id'];
+        }
+        
+        // Extract rate limits if available
+        if (!empty($responseData['meta']['rateLimits'])) {
+            $metadata['rate_limits'] = $responseData['meta']['rateLimits'];
+        }
+        
+        return $metadata;
+    }
+
+    /**
+     * Load agent data from an OpenAI format response
+     * 
+     * @param array $responseData The OpenAI format response data
+     * @param string|null $parentSpanId Optional parent span ID
+     * @return string The ID of the agent span
+     */
+    public function loadAgentData(array $responseData, ?string $parentSpanId = null): string
+    {
+        $agentName = $responseData['meta']['model'] ?? 'unknown_agent';
+        $spanId = $this->startSpan($agentName, 'agent_execution', $parentSpanId);
+        
+        // Extract metadata
+        $metadata = $this->extractAgentMetadata($responseData);
+        
+        // Extract messages
+        $messages = $responseData['messages'] ?? [];
+        $spanData = [
+            'agent' => $agentName,
+            'messages' => $messages,
+            'metadata' => $metadata,
+        ];
+        
+        // Add output if available
+        if (isset($responseData['text'])) {
+            $spanData['output'] = $responseData['text'];
+        }
+        
+        // Update the span with the data
+        $this->updateSpan($spanId, $spanData);
+        
+        // Process steps
+        if (!empty($responseData['steps'])) {
+            foreach ($responseData['steps'] as $index => $step) {
+                $this->processStep($step, $spanId, $index);
+            }
+        }
+        
+        return $spanId;
+    }
+
+    /**
+     * Process a step from the OpenAI response
+     * 
+     * @param array $step The step data
+     * @param string $parentSpanId The parent span ID
+     * @param int $index The step index
+     * @return string The step span ID
+     */
+    protected function processStep(array $step, string $parentSpanId, int $index): string
+    {
+        $stepSpanId = $this->startSpan("step_{$index}", 'llm_step', $parentSpanId);
+        
+        $this->updateSpan($stepSpanId, [
+            'step_index' => $index,
+            'text' => $step['text'] ?? '',
+            'finish_reason' => $step['finishReason'] ?? null,
+            'tool_calls' => $step['toolCalls'] ?? [],
+            'usage' => $step['usage'] ?? null,
+        ]);
+        
+        // Process tool results
+        if (!empty($step['toolResults'])) {
+            foreach ($step['toolResults'] as $toolIdx => $toolResult) {
+                $toolCallId = $toolResult['toolCallId'] ?? null;
+                $toolName = $toolResult['toolName'] ?? 'unknown_tool';
+                
+                $spanName = $toolCallId ? 
+                    "tool_{$toolName}_{$toolCallId}" : 
+                    "tool_{$toolName}_{$toolIdx}";
+                
+                $toolSpanId = $this->startSpan($spanName, 'tool_call', $stepSpanId);
+                
+                $this->updateSpan($toolSpanId, [
+                    'tool_name' => $toolName,
+                    'tool_call_id' => $toolCallId,
+                    'args' => $toolResult['args'] ?? [],
+                    'result' => $toolResult['result'] ?? null,
+                ]);
+                
+                $this->endSpan($toolSpanId);
+            }
+        }
+        
+        $this->endSpan($stepSpanId);
+        return $stepSpanId;
     }
 } 

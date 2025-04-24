@@ -32,12 +32,23 @@ class AgentResultBuilder
      */
     public function withTrace(Trace|string $trace): AgentResult
     {
-        // If a string is provided, create a trace with that name
-        if (is_string($trace)) {
-            $trace = Trace::as($trace);
-        }
+        try {
+            // If a string is provided, create a trace with that name
+            if (is_string($trace)) {
+                $trace = Trace::as($trace);
+            }
 
-        $trace->addResult($this->result);
+            $trace->addResult($this->result);
+        } catch (\Exception $e) {
+            // Log the error but don't crash
+            \Illuminate\Support\Facades\Log::error("Error adding result to trace", [
+                'message' => $e->getMessage(),
+                'exception' => $e,
+                'trace' => is_object($trace) ? get_class($trace) : (is_string($trace) ? $trace : gettype($trace)),
+                'result' => is_object($this->result) ? get_class($this->result) : gettype($this->result),
+            ]);
+        }
+        
         return $this->result;
     }
 
