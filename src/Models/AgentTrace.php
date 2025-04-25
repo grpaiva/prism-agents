@@ -442,13 +442,13 @@ class AgentTrace extends Model
     private static function flattenHierarchy($items, &$result, $parentExpanded = true)
     {
         foreach ($items as $item) {
-            // Add the current item
-            $item['visible'] = $parentExpanded;
+            // Add the current item - always visible
+            $item['visible'] = true;
             $result[] = $item;
             
             // Add its children
             if (!empty($item['children'])) {
-                self::flattenHierarchy($item['children'], $result, $parentExpanded);
+                self::flattenHierarchy($item['children'], $result, true);
             }
         }
     }

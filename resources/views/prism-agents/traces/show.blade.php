@@ -7,7 +7,6 @@
     selectedSpanId: null,
     selectedSpan: null,
     hierarchicalTraces: {{ json_encode($hierarchicalTraces) }},
-    expandedTraces: {},
     totalDuration: {{ $totalDuration }},
     formatDuration(ms) {
         return Number(Math.abs(ms)).toFixed(2) + ' ms';
@@ -16,35 +15,6 @@
         this.selectedSpanId = span.id;
         this.selectedSpan = span;
         console.log('Selected Span:', span);
-    },
-    toggleExpand(traceId) {
-        if (this.expandedTraces[traceId]) {
-            this.expandedTraces[traceId] = false;
-        } else {
-            this.expandedTraces[traceId] = true;
-        }
-        
-        // Update visibility of child traces
-        const parentIndex = this.hierarchicalTraces.findIndex(item => item.model.id === traceId);
-        if (parentIndex !== -1) {
-            const parentLevel = this.hierarchicalTraces[parentIndex].level;
-            let i = parentIndex + 1;
-            
-            while (i < this.hierarchicalTraces.length && this.hierarchicalTraces[i].level > parentLevel) {
-                // If this is a direct child of the parent
-                if (this.hierarchicalTraces[i].level === parentLevel + 1) {
-                    this.hierarchicalTraces[i].visible = this.expandedTraces[traceId];
-                } 
-                // If this is a nested child and its parent is visible
-                else if (this.hierarchicalTraces[i].model.parent_id) {
-                    const parentVisible = this.hierarchicalTraces.find(
-                        t => t.model.id === this.hierarchicalTraces[i].model.parent_id
-                    )?.visible;
-                    this.hierarchicalTraces[i].visible = parentVisible && this.expandedTraces[this.hierarchicalTraces[i].model.parent_id];
-                }
-                i++;
-            }
-        }
     },
     getPercentage(duration) {
         return Math.min(100, Math.max(0, (Math.abs(duration) / this.totalDuration) * 100));
@@ -135,8 +105,7 @@ class="space-y-6">
                     <div 
                         class="px-4 py-3 sm:px-6 cursor-pointer hover:bg-gray-50"
                         :class="{ 
-                            'bg-blue-50': selectedSpanId === traceItem.model.id,
-                            'hidden': !traceItem.visible
+                            'bg-blue-50': selectedSpanId === traceItem.model.id
                         }"
                         @click.stop="setSelectedSpan(traceItem.model)"
                     >
@@ -144,17 +113,8 @@ class="space-y-6">
                             <!-- Indentation based on level -->
                             <div :style="{ width: (traceItem.level * 20) + 'px' }" class="flex-shrink-0"></div>
                             
-                            <!-- Expand/collapse icon if has children -->
-                            <div class="w-5 flex-shrink-0" @click.stop="toggleExpand(traceItem.model.id)">
-                                <template x-if="traceItem.children.length > 0">
-                                    <svg :class="{ 'transform rotate-90': expandedTraces[traceItem.model.id] }" class="h-4 w-4 transition-transform duration-200" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
-                                    </svg>
-                                </template>
-                            </div>
-                            
                             <!-- Type icon -->
-                            <div class="w-7 text-center">
+                            <div class="w-7 text-center ml-5">
                                 <span x-text="typeToIcon(traceItem.model.type)"></span>
                             </div>
                             
@@ -385,19 +345,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('alpine:init', () => {
         const alpineData = Alpine.$data(document.querySelector('.space-y-6'));
         
-        // Set initial expanded state for the root trace
+        // Auto-select the root span
         if (alpineData.hierarchicalTraces.length > 0) {
-            const rootTraceId = alpineData.hierarchicalTraces[0].model.id;
-            alpineData.expandedTraces[rootTraceId] = true;
-            
-            // Auto-select the root span
             alpineData.setSelectedSpan(alpineData.hierarchicalTraces[0].model);
-            
-            // Make all traces visible by default - the hierarchy already only includes
-            // traces for this specific execution
-            alpineData.hierarchicalTraces.forEach(trace => {
-                trace.visible = true;
-            });
         }
     });
 });
