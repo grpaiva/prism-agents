@@ -43,6 +43,10 @@ class PrismAgents
             $agent->steps($config['maxSteps']);
         }
         
+        if (isset($config['metadata'])) {
+            $agent->withMetadata($config['metadata']);
+        }
+        
         return $agent;
     }
 
@@ -101,9 +105,10 @@ class PrismAgents
      * @param Agent $agent
      * @param string|array $input
      * @param Trace|string|null $trace Optional trace or trace name
+     * @param AgentContext|null $context Optional context
      * @return AgentResultBuilder
      */
-    public static function run(Agent $agent, $input, Trace|string|null $trace = null): AgentResultBuilder
+    public static function run(Agent $agent, $input, Trace|string|null $trace = null, ?AgentContext $context = null): AgentResultBuilder
     {
         $runner = new Runner();
         
@@ -115,7 +120,13 @@ class PrismAgents
             $runner->withTrace($trace);
         }
         
-        $result = $runner->runAgent($agent, $input);
+        // Create or merge context
+        $context = $context ?? AgentContext::as();
+        if (!empty($agent->getMetadata())) {
+            $context->withData($agent->getMetadata());
+        }
+        
+        $result = $runner->runAgent($agent, $input, $context);
         return new AgentResultBuilder($result);
     }
 

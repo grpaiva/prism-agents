@@ -7,6 +7,7 @@ use Prism\Prism\Prism;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Text\Response;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class Runner
 {
@@ -74,8 +75,16 @@ class Runner
         // Create a context if none is provided
         $context = $context ?? AgentContext::as('runner_context');
 
-        // Start tracing
-        $spanId = $this->trace->startSpan($agent->getName(), 'agent_run');
+        // Start tracing the execution
+        $executionId = $this->trace->startExecution(
+            $agent->getName(),
+            [
+                'provider' => $agent->getProvider()?->value,
+                'model' => $agent->getModel(),
+                'user_id' => $context->get('user_id'),
+                'parent_id' => $context->get('parent_execution_id'),
+            ]
+        );
         
         try {
             // Check guardrails before execution
@@ -152,10 +161,12 @@ class Runner
             ];
             $result->setMetadata($metadata);
             
-            // Complete the trace span
-            $this->trace->endSpan($spanId, [
-                'status' => 'success',
-                'result' => $result->toArray(),
+            // End the execution with success
+            $this->trace->endExecution([
+                'status' => 'completed',
+                'total_tokens' => $metadata['usage']['total_tokens'] ?? null,
+                'prompt_tokens' => $metadata['usage']['prompt_tokens'] ?? null,
+                'completion_tokens' => $metadata['usage']['completion_tokens'] ?? null,
             ]);
             
             return $result;
@@ -166,10 +177,10 @@ class Runner
                 'exception' => $e,
             ]);
             
-            // End span with error
-            $this->trace->endSpan($spanId, [
-                'status' => 'error',
-                'error' => $e->getMessage(),
+            // End execution with error
+            $this->trace->endExecution([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
             ]);
             
             throw $e;
@@ -204,13 +215,74 @@ class Runner
         // Add steps
         if ($response->steps->isNotEmpty()) {
             foreach ($response->steps as $step) {
-                $result->addStep([
-                    'text' => $step->text,
-                    'finish_reason' => $this->enumToString($step->finishReason),
-                    'tool_calls' => $step->toolCalls,
-                    'tool_results' => $step->toolResults,
-                    'additional_content' => $step->additionalContent,
+                // Skip if step is not the expected type
+                if (!is_object($step)) {
+                    \Illuminate\Support\Facades\Log::warning('Unexpected step type in response', ['step' => $step]);
+                    continue;
+                }
+                
+                // Start a new step
+                $stepId = $this->trace->startStep('step', [
+                    'text' => property_exists($step, 'text') ? $step->text : null,
+                    'finish_reason' => $this->enumToString($step->finishReason ?? null),
+                    'usage' => $this->extractUsageData($step->usage ?? null),
                 ]);
+
+                // Process tool calls and results
+                if (!empty($step->toolCalls)) {
+                    foreach ($step->toolCalls as $toolCall) {
+                        $toolCallId = $this->trace->startToolCall($toolCall->name ?? 'unnamed_tool', [
+                            'call_id' => $toolCall->id ?? Str::uuid()->toString(),
+                            'args' => property_exists($toolCall, 'args') ? $toolCall->args : null,
+                        ]);
+
+                        // Find and record corresponding result
+                        if (!empty($step->toolResults)) {
+                            foreach ($step->toolResults as $toolResult) {
+                                if ($toolResult->toolCallId === $toolCall->id) {
+                                    $this->trace->recordToolResult($toolCallId, [
+                                        'tool_name' => $toolResult->toolName ?? 'unknown',
+                                        'args' => property_exists($toolResult, 'args') ? $toolResult->args : null,
+                                        'result' => property_exists($toolResult, 'result') ? $toolResult->result : null,
+                                    ]);
+                                    break;
+                                }
+                            }
+                        }
+
+                        $this->trace->endToolCall($toolCallId);
+                    }
+                }
+
+                // Record messages
+                if (!empty($step->messages)) {
+                    foreach ($step->messages as $message) {
+                        $this->trace->recordMessage([
+                            'content' => property_exists($message, 'content') ? $message->content : null,
+                            'tool_calls' => property_exists($message, 'toolCalls') ? $message->toolCalls : null,
+                            'additional_content' => property_exists($message, 'additionalContent') ? $message->additionalContent : null,
+                        ]);
+                    }
+                }
+
+                // End the step
+                $this->trace->endStep();
+
+                // Add step to result - make sure $result is an AgentResult
+                if (method_exists($result, 'addStep')) {
+                    $result->addStep([
+                        'text' => property_exists($step, 'text') ? $step->text : null,
+                        'finish_reason' => $this->enumToString($step->finishReason ?? null),
+                        'tool_calls' => property_exists($step, 'toolCalls') ? $step->toolCalls : [],
+                        'tool_results' => property_exists($step, 'toolResults') ? $step->toolResults : [],
+                        'additional_content' => property_exists($step, 'additionalContent') ? $step->additionalContent : null,
+                ]);
+                } else {
+                    \Illuminate\Support\Facades\Log::warning('Cannot add step: result object does not support addStep method', [
+                        'result_type' => get_class($result),
+                        'agent' => $agent->getName(),
+                    ]);
+                }
             }
         }
         
@@ -333,24 +405,7 @@ class Runner
     }
 
     /**
-     * Map Prism's provider name to Provider enum
-     *
-     * @param string $provider
-     * @return Provider
-     */
-    protected function mapProviderName(string $provider): Provider
-    {
-        $map = [
-            'openai' => Provider::OpenAI,
-            'anthropic' => Provider::Anthropic,
-            // Add more mappings as needed
-        ];
-        
-        return $map[strtolower($provider)] ?? Provider::OpenAI;
-    }
-
-    /**
-     * Safely extract provider information from Meta object
+     * Extract provider information from Meta object
      *
      * @param object $meta
      * @return string|null
@@ -377,48 +432,6 @@ class Runner
         }
         
         return null;
-    }
-
-    /**
-     * Convert tool to a definition array compatible with Prism
-     *
-     * @param mixed $tool
-     * @return array
-     */
-    protected function convertToolToDefinition($tool): array
-    {
-        // If tool has toDefinition method, use it
-        if (method_exists($tool, 'toDefinition')) {
-            return $tool->toDefinition();
-        }
-        
-        // If it's a vendor Tool object, convert it manually
-        if ($tool instanceof \Prism\Prism\Tool) {
-            return [
-                'type' => 'function',
-                'function' => [
-                    'name' => $tool->name(),
-                    'description' => $tool->description(),
-                    'parameters' => [
-                        'type' => 'object',
-                        'properties' => $tool->parameters(),
-                        'required' => $tool->requiredParameters(),
-                    ],
-                ],
-            ];
-        }
-        
-        // For other types, try to cast to array if possible
-        if (method_exists($tool, 'toArray')) {
-            return $tool->toArray();
-        }
-        
-        // Last resort, return as is if it's already an array
-        if (is_array($tool)) {
-            return $tool;
-        }
-        
-        throw new \InvalidArgumentException('Tool type not supported: ' . (is_object($tool) ? get_class($tool) : gettype($tool)));
     }
 
     /**

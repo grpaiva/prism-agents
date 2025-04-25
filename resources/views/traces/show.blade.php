@@ -10,7 +10,15 @@
     expandedTraces: {},
     totalDuration: {{ $totalDuration }},
     formatDuration(ms) {
-        return Number(Math.abs(ms)).toFixed(2) + ' ms';
+        if (ms === null || ms === undefined) return 'N/A';
+        
+        if (ms < 1000) {
+            return Math.abs(ms).toFixed(0) + ' ms';
+        } else if (ms < 60000) {
+            return (Math.abs(ms) / 1000).toFixed(2) + ' s';
+        } else {
+            return (Math.abs(ms) / 60000).toFixed(2) + ' m';
+        }
     },
     setSelectedSpan(span) {
         this.selectedSpanId = span.id;
@@ -47,11 +55,11 @@
         }
     },
     getPercentage(duration) {
-        return Math.min(100, Math.max(0, (Math.abs(duration) / this.totalDuration) * 100));
+        return Math.min(100, Math.max(0, (Math.abs(duration || 0) / this.totalDuration) * 100));
     },
     getDisplayTime(span) {
-        if (span.duration !== null) {
-            return this.formatDuration(Math.abs(span.duration));
+        if (span.duration !== null && span.duration !== undefined) {
+            return this.formatDuration(span.duration);
         }
         return 'N/A';
     },
@@ -107,15 +115,15 @@ class="space-y-6">
                         <svg class="h-4 w-4 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
                         </svg>
-                        {{ $rootSpan->name }}
+                        {{ $rootExecution->name }}
                     </h2>
                     <p class="mt-1 text-sm text-gray-500">
-                        {{ $traceId }}
+                        {{ $executionId }}
                     </p>
                 </div>
                 <div class="text-right">
                     <p class="text-sm font-medium text-gray-900">Started</p>
-                    <p class="text-sm text-gray-500">{{ $rootSpan->started_at->format('M j, Y g:i:s A') }}</p>
+                    <p class="text-sm text-gray-500">{{ $rootExecution->started_at->format('M j, Y g:i:s A') }}</p>
                 </div>
             </div>
         </div>
@@ -205,12 +213,12 @@ class="space-y-6">
             
             <div class="px-4 py-5 sm:px-6 space-y-4" x-cloak x-show="selectedSpan">
                 <div>
-                    <h4 class="text-sm font-medium text-gray-500">Span Type</h4>
+                    <h4 class="text-sm font-medium text-gray-500">Type</h4>
                     <p class="mt-1 text-sm text-gray-900" x-text="selectedSpan?.type"></p>
                 </div>
                 
                 <div>
-                    <h4 class="text-sm font-medium text-gray-500">Span ID</h4>
+                    <h4 class="text-sm font-medium text-gray-500">ID</h4>
                     <p class="mt-1 text-sm text-gray-900 break-all" x-text="selectedSpan?.id"></p>
                 </div>
                 
@@ -226,7 +234,7 @@ class="space-y-6">
                 
                 <template x-if="selectedSpan && selectedSpan.metadata">
                     <div>
-                        <h4 class="text-sm font-medium text-gray-500 mb-2">Metadata</h4>
+                        <h4 class="text-sm font-medium text-gray-500 mb-2">Details</h4>
                         
                         <div class="border border-gray-200 rounded-md">
                             <div x-data="{ tab: 'basic' }" class="bg-gray-50 p-1 rounded-t-md border-b border-gray-200">
@@ -236,15 +244,15 @@ class="space-y-6">
                                         :class="{ 'bg-white shadow text-gray-900': tab === 'basic', 'text-gray-500 hover:text-gray-700': tab !== 'basic' }"
                                         class="px-3 py-1 rounded-md"
                                     >
-                                        Basic
+                                        Properties
                                     </button>
                                     <button 
-                                        @click="tab = 'system'" 
-                                        :class="{ 'bg-white shadow text-gray-900': tab === 'system', 'text-gray-500 hover:text-gray-700': tab !== 'system' }"
+                                        @click="tab = 'instructions'" 
+                                        :class="{ 'bg-white shadow text-gray-900': tab === 'instructions', 'text-gray-500 hover:text-gray-700': tab !== 'instructions' }"
                                         class="px-3 py-1 rounded-md"
-                                        x-show="selectedSpan.metadata && selectedSpan.metadata.system_message"
+                                        x-show="selectedSpan.type === 'llm_step' && selectedSpan.metadata.input"
                                     >
-                                        System Message
+                                        Instructions
                                     </button>
                                     <button 
                                         @click="tab = 'raw'" 
@@ -258,106 +266,98 @@ class="space-y-6">
                             
                             <div class="p-3 overflow-auto max-h-96 text-xs font-mono">
                                 <div x-show="tab === 'basic'">
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.agent">
-                                        <div class="mb-2">
-                                            <span class="text-gray-500">Agent:</span>
-                                            <span class="text-gray-900" x-text="selectedSpan.metadata.agent"></span>
+                                    <div class="mb-2" x-show="selectedSpan.type === 'agent_execution' || selectedSpan.type === 'agent_run'">
+                                        <div class="text-gray-500 font-medium mb-2">Properties</div>
+                                        
+                                        <div class="space-y-2">
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.model">
+                                                <div>
+                                                    <span class="text-gray-500">Model</span>
+                                                    <div class="text-gray-900" x-text="selectedSpan.metadata.model"></div>
+                                                </div>
+                                            </template>
+                                            
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.provider">
+                                                <div>
+                                                    <span class="text-gray-500">Provider</span>
+                                                    <div class="text-gray-900" x-text="selectedSpan.metadata.provider"></div>
+                                                </div>
+                                            </template>
+                                            
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.status">
+                                                <div>
+                                                    <span class="text-gray-500">Status</span>
+                                                    <div 
+                                                        :class="{
+                                                            'text-green-600': selectedSpan.metadata.status === 'completed',
+                                                            'text-red-600': selectedSpan.metadata.status === 'failed',
+                                                            'text-gray-900': !['completed', 'failed'].includes(selectedSpan.metadata.status)
+                                                        }"
+                                                        x-text="selectedSpan.metadata.status"
+                                                    ></div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                    
+                                    <template x-if="selectedSpan.type === 'llm_step'">
+                                        <div>
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.input">
+                                                <div class="mb-2">
+                                                    <div class="text-gray-500 font-medium">Input:</div>
+                                                    <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.input"></div>
+                                                </div>
+                                            </template>
+                                            
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.output">
+                                                <div class="mb-2">
+                                                    <div class="text-gray-500 font-medium">Output:</div>
+                                                    <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.output"></div>
+                                                </div>
+                                            </template>
+                                            
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.tools && selectedSpan.metadata.tools.length > 0">
+                                                <div class="mb-2">
+                                                    <div class="text-gray-500 font-medium">Available Functions:</div>
+                                                    <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200">
+                                                        <template x-for="(tool, index) in selectedSpan.metadata.tools" :key="index">
+                                                            <div class="mb-1" x-text="tool"></div>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </template>
                                         </div>
                                     </template>
                                     
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.provider">
-                                        <div class="mb-2">
-                                            <span class="text-gray-500">Provider:</span>
-                                            <span class="text-gray-900" x-text="selectedSpan.metadata.provider"></span>
-                                        </div>
-                                    </template>
-                                    
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.model">
-                                        <div class="mb-2">
-                                            <span class="text-gray-500">Model:</span>
-                                            <span class="text-gray-900" x-text="selectedSpan.metadata.model"></span>
-                                        </div>
-                                    </template>
-                                    
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.input">
-                                        <div class="mb-2">
-                                            <div class="text-gray-500">Input:</div>
-                                            <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.input"></div>
-                                        </div>
-                                    </template>
-                                    
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.output">
-                                        <div class="mb-2">
-                                            <div class="text-gray-500">Output:</div>
-                                            <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.output"></div>
-                                        </div>
-                                    </template>
-                                    
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.status">
-                                        <div class="mb-2">
-                                            <span class="text-gray-500">Status:</span>
-                                            <span 
-                                                :class="{
-                                                    'text-green-600': selectedSpan.metadata.status === 'success',
-                                                    'text-red-600': selectedSpan.metadata.status === 'error',
-                                                    'text-gray-900': !['success', 'error'].includes(selectedSpan.metadata.status)
-                                                }"
-                                                x-text="selectedSpan.metadata.status"
-                                            ></span>
-                                        </div>
-                                    </template>
-                                    
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.tool_name">
-                                        <div class="mb-2">
-                                            <div class="text-gray-500">Tool:</div>
-                                            <div class="text-gray-900" x-text="selectedSpan.metadata.tool_name"></div>
-                                        </div>
-                                    </template>
-                                    
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.args">
-                                        <div class="mb-2">
-                                            <div class="text-gray-500">Arguments:</div>
-                                            <pre class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="JSON.stringify(selectedSpan.metadata.args, null, 2)"></pre>
-                                        </div>
-                                    </template>
-                                    
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.result">
-                                        <div class="mb-2">
-                                            <div class="text-gray-500">Result:</div>
-                                            <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.result"></div>
-                                        </div>
-                                    </template>
-                                    
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.tools">
-                                        <div class="mb-2">
-                                            <div class="text-gray-500">Available Tools:</div>
-                                            <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200">
-                                                <template x-for="(tool, index) in selectedSpan.metadata.tools" :key="index">
-                                                    <div class="mb-1" x-text="tool"></div>
-                                                </template>
-                                            </div>
+                                    <template x-if="selectedSpan.type === 'handoff'">
+                                        <div>
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.tool_name">
+                                                <div class="mb-2">
+                                                    <div class="text-gray-500 font-medium">Function:</div>
+                                                    <div class="text-gray-900" x-text="selectedSpan.metadata.tool_name"></div>
+                                                </div>
+                                            </template>
+                                            
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.args">
+                                                <div class="mb-2">
+                                                    <div class="text-gray-500 font-medium">Arguments:</div>
+                                                    <pre class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200 text-xs" x-text="JSON.stringify(selectedSpan.metadata.args, null, 2)"></pre>
+                                                </div>
+                                            </template>
+                                            
+                                            <template x-if="selectedSpan.metadata && selectedSpan.metadata.result">
+                                                <div class="mb-2">
+                                                    <div class="text-gray-500 font-medium">Result:</div>
+                                                    <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.result"></div>
+                                                </div>
+                                            </template>
                                         </div>
                                     </template>
                                 </div>
                                 
-                                <div x-show="tab === 'system'" x-cloak>
-                                    <template x-if="selectedSpan.metadata && selectedSpan.metadata.system_message">
-                                        <div>
-                                            <div class="mb-3">
-                                                <div class="text-gray-500 font-bold">Default SDK Message:</div>
-                                                <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.system_message.default"></div>
-                                            </div>
-                                            
-                                            <div class="mb-3">
-                                                <div class="text-gray-500 font-bold">Agent Instructions:</div>
-                                                <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.system_message.agent_instructions"></div>
-                                            </div>
-                                            
-                                            <div>
-                                                <div class="text-gray-500 font-bold">Combined Message:</div>
-                                                <div class="text-gray-900 whitespace-pre-wrap mt-1 pl-2 border-l-2 border-gray-200" x-text="selectedSpan.metadata.system_message.combined"></div>
-                                            </div>
-                                        </div>
+                                <div x-show="tab === 'instructions'" x-cloak>
+                                    <template x-if="selectedSpan.type === 'llm_step' && selectedSpan.metadata && selectedSpan.metadata.input">
+                                        <div class="whitespace-pre-wrap" x-text="selectedSpan.metadata.input"></div>
                                     </template>
                                 </div>
                                 
@@ -419,19 +419,23 @@ document.addEventListener('DOMContentLoaded', () => {
 }
 
 .timeline-bar.agent_execution .timeline-progress {
-    background-color: #4299e1;
+    background-color: #4299e1; /* blue-500 */
+}
+
+.timeline-bar.agent_run .timeline-progress {
+    background-color: #667eea; /* indigo-500 */
 }
 
 .timeline-bar.llm_step .timeline-progress {
-    background-color: #48bb78;
+    background-color: #48bb78; /* green-500 */
 }
 
 .timeline-bar.handoff .timeline-progress {
-    background-color: #ed8936;
+    background-color: #ed8936; /* orange-500 */
 }
 
 .timeline-bar.tool_call .timeline-progress {
-    background-color: #9f7aea;
+    background-color: #9f7aea; /* purple-500 */
 }
 </style>
 @endpush 

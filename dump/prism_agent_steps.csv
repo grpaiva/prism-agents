@@ -1,0 +1,12 @@
+916ff0e1-021a-49cb-89a6-88bdc55f2b85,28b7cc2c-5f05-456d-a82b-aac3dff6be0b,0,"Hola, ¿cómo estás?",stop,"{""prompt_tokens"":122,""completion_tokens"":7,""total_tokens"":129}","{""text"":""Hola, \u00bfc\u00f3mo est\u00e1s?"",""finish_reason"":""stop"",""usage"":{""prompt_tokens"":122,""completion_tokens"":7,""total_tokens"":129}}",2025-04-25 13:55:23,2025-04-25 13:55:23,0,2025-04-25 13:55:23,2025-04-25 13:55:23
+187e403f-b41d-45da-9618-c781954ce9a6,41873364-3a62-425d-a425-d6ec0f8711c0,0,"Bonjour, comment ça va ?",stop,"{""prompt_tokens"":122,""completion_tokens"":7,""total_tokens"":129}","{""text"":""Bonjour, comment \u00e7a va ?"",""finish_reason"":""stop"",""usage"":{""prompt_tokens"":122,""completion_tokens"":7,""total_tokens"":129}}",2025-04-25 13:55:24,2025-04-25 13:55:24,0,2025-04-25 13:55:24,2025-04-25 13:55:24
+947afa80-8bb5-423b-869d-bb5d5fe8872f,8ab6e831-177a-4a06-8ed1-6dee80d5e05f,0,"",toolcalls,"{""prompt_tokens"":201,""completion_tokens"":57,""total_tokens"":258}","{""text"":"""",""finish_reason"":""toolcalls"",""usage"":{""prompt_tokens"":201,""completion_tokens"":57,""total_tokens"":258}}",2025-04-25 13:55:26,2025-04-25 13:55:26,0,2025-04-25 13:55:26,2025-04-25 13:55:26
+2504b9d2-0530-4ad6-9fb6-74e3e2aea16d,8ab6e831-177a-4a06-8ed1-6dee80d5e05f,1,"The translation of ""Hello, how are you?"" is:
+
+- Spanish: ""Hola, ¿cómo estás?""
+- French: ""Bonjour, comment ça va ?""",stop,"{""prompt_tokens"":300,""completion_tokens"":34,""total_tokens"":334}","{""text"":""The translation of \""Hello, how are you?\"" is:\n\n- Spanish: \""Hola, \u00bfc\u00f3mo est\u00e1s?\""\n- French: \""Bonjour, comment \u00e7a va ?\"""",""finish_reason"":""stop"",""usage"":{""prompt_tokens"":300,""completion_tokens"":34,""total_tokens"":334}}",2025-04-25 13:55:26,2025-04-25 13:55:26,0,2025-04-25 13:55:26,2025-04-25 13:55:26
+6952e5fd-4ce5-4038-9a4d-2b9ced197d38,4ee84867-78bc-454a-b02a-28a2434acfe8,0,"",toolcalls,,"{""text"":"""",""finish_reason"":""toolcalls""}",2025-04-25 13:55:26,2025-04-25 13:55:26,0,2025-04-25 13:55:26,2025-04-25 13:55:26
+916ae8cc-a9eb-4579-9d67-c4050a719b1a,4ee84867-78bc-454a-b02a-28a2434acfe8,1,"The translation of ""Hello, how are you?"" is:
+
+- Spanish: ""Hola, ¿cómo estás?""
+- French: ""Bonjour, comment ça va ?""",stop,,"{""text"":""The translation of \""Hello, how are you?\"" is:\n\n- Spanish: \""Hola, \u00bfc\u00f3mo est\u00e1s?\""\n- French: \""Bonjour, comment \u00e7a va ?\"""",""finish_reason"":""stop""}",2025-04-25 13:55:26,2025-04-25 13:55:26,0,2025-04-25 13:55:26,2025-04-25 13:55:26

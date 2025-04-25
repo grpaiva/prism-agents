@@ -171,7 +171,7 @@ $frenchAgent = Agent::as('french_agent')
 // Create an orchestrator agent
 $orchestratorAgent = Agent::as('orchestrator_agent')
     ->withInstructions("You are a translation agent. Use the tools given to you to translate.")
-    ->using(Provider::OpenAI, 'gpt-4.1')
+    ->using(Provider::OpenAI, 'gpt-4.1-mini')
     ->withTools([
         $spanishAgent->asTool(),
         $frenchAgent->asTool()
@@ -190,12 +190,15 @@ echo $result->getOutput();
 ```php
 use Grpaiva\PrismAgents\Agent;
 use Grpaiva\PrismAgents\PrismAgents;
+use Grpaiva\PrismAgents\Trace;
 use Prism\Prism\Enums\Provider;
 
-// Create and run an agent
+// Create and run an agent with tracing
 $agent = Agent::as('assistant')
     ->withInstructions('You are a helpful assistant.')
-    ->using(Provider::OpenAI, 'gpt-4o');
+    ->using(Provider::OpenAI, 'gpt-4o')
+    ->forUser(1) // Associate with user ID 1
+    ->withParent('parent_execution'); // Link to parent execution
 
 // Method 1: Use withTrace with a string name
 $result = PrismAgents::run($agent, "Hello, how are you?")
@@ -204,28 +207,61 @@ $result = PrismAgents::run($agent, "Hello, how are you?")
 // Method 2: Pass trace name directly to run method
 $result = PrismAgents::run($agent, "Hello, how are you?", 'another_trace');
 
-// Method 3: For more control, you can still create a Trace object
-$trace = Trace::as('custom_trace');
-$trace->withConnection('custom_db_connection');
+// Method 3: For more control, create a Trace object
+$trace = Trace::as('custom_trace')
+    ->withConnection('custom_db_connection')
+    ->withTable('custom_traces_table');
 $result = PrismAgents::run($agent, "Hello, how are you?", $trace);
 
-// Retrieve the trace data (assuming you have the trace name)
-$traceData = \Grpaiva\PrismAgents\Trace::retrieve('my_trace');
+// Retrieve the trace data
+$traceData = Trace::retrieve('my_trace');
 if ($traceData) {
-    echo "Number of spans: " . count($traceData->getSpans());
+    echo "Number of executions: " . count($traceData->getSpans());
+    
+    // Get execution details
+    $execution = $traceData->getCurrentExecution();
+    if ($execution) {
+        echo "Execution status: " . $execution->status;
+        echo "Total tokens: " . $execution->total_tokens;
+        echo "Duration: " . $execution->duration . "ms";
+    }
 }
 ```
 
-#### Tracing Database Storage
+#### Tracing Database Structure
 
-The package creates a `prism_agent_traces` table that stores detailed information about agent executions:
+The package creates several tables to store detailed information about agent executions:
 
-- Basic trace information: trace ID, span ID, parent span ID, timestamps
-- Agent details: name, provider, model
-- Execution metrics: tokens used, steps, tool calls
-- Content: input text, output text, status, errors
+1. `prism_agent_executions`: Main table for execution information
+   - Basic info: ID, parent_id, user_id, name, status
+   - Provider details: provider, model
+   - Metrics: tokens, duration
+   - Timing: started_at, ended_at
 
-The tracing system automatically adapts to the available schema, making it compatible with any database supported by Laravel. For optimal performance with high-volume tracing, consider using a dedicated connection for trace data.
+2. `prism_agent_steps`: Stores steps within an execution
+   - Execution relationship
+   - Step details: index, text, finish_reason
+   - Usage metrics and timing
+
+3. `prism_agent_tool_calls`: Records tool calls within steps
+   - Step relationship
+   - Call details: ID, name, args
+   - Timing information
+
+4. `prism_agent_tool_results`: Contains results of tool calls
+   - Tool call relationship
+   - Result data and timing
+
+5. `prism_agent_messages`: Stores messages within steps
+   - Step relationship
+   - Message content and metadata
+
+The tracing system automatically adapts to the available schema and supports:
+- User association
+- Parent-child execution relationships
+- Detailed timing and metrics
+- Tool call tracking
+- Message history
 
 ### Guardrails
 

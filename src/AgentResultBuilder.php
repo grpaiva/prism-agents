@@ -28,17 +28,39 @@ class AgentResultBuilder
      * Add trace to the result
      *
      * @param Trace|string $trace Trace object or trace name
-     * @return AgentResult
+     * @return $this
      */
-    public function withTrace(Trace|string $trace): AgentResult
+    public function withTrace(Trace|string $trace): self
     {
-        // If a string is provided, create a trace with that name
         if (is_string($trace)) {
             $trace = Trace::as($trace);
         }
+        
+        try {
+            // Debug log the structure of the result
+            \Illuminate\Support\Facades\Log::debug('AgentResult structure before tracing', [
+                'result_type' => get_class($this->result),
+                'has_agent' => $this->result->getAgent() !== null,
+                'agent_name' => $this->result->getAgent() ? $this->result->getAgent()->getName() : 'none',
+                'has_output' => $this->result->getOutput() !== null,
+                'steps_count' => count($this->result->getSteps()),
+                'has_metadata' => $this->result->getMetadata() !== null,
+                'has_error' => $this->result->getError() !== null,
+            ]);
 
         $trace->addResult($this->result);
-        return $this->result;
+        } catch (\Exception $e) {
+            // Log error but don't break execution
+            \Illuminate\Support\Facades\Log::error('Error adding result to trace: ' . $e->getMessage(), [
+                'exception' => $e,
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'trace_id' => $trace->getTraceId(),
+            ]);
+        }
+        
+        return $this;
     }
 
     /**

@@ -1,0 +1,14 @@
+63c1320b-ee17-48b8-a6c4-d39320c306c9,916ff0e1-021a-49cb-89a6-88bdc55f2b85,"Hello, how are you?",,"[{""text"":""Hello, how are you?""}]",0,2025-04-25 13:55:23,2025-04-25 13:55:23
+36bd7e71-052e-4012-a40a-05f4b16b6f47,916ff0e1-021a-49cb-89a6-88bdc55f2b85,"Hola, ¿cómo estás?",[],[],1,2025-04-25 13:55:23,2025-04-25 13:55:23
+102088ef-a03b-4e0c-a827-11c949197c6e,187e403f-b41d-45da-9618-c781954ce9a6,"Hello, how are you?",,"[{""text"":""Hello, how are you?""}]",0,2025-04-25 13:55:24,2025-04-25 13:55:24
+773661ee-8ecf-483e-a0db-323d882d1f55,187e403f-b41d-45da-9618-c781954ce9a6,"Bonjour, comment ça va ?",[],[],1,2025-04-25 13:55:24,2025-04-25 13:55:24
+c55ad49c-3d59-44c7-9849-812d16920196,947afa80-8bb5-423b-869d-bb5d5fe8872f,"Translate 'Hello, how are you?' to Spanish and French.",,"[{""text"":""Translate 'Hello, how are you?' to Spanish and French.""}]",0,2025-04-25 13:55:26,2025-04-25 13:55:26
+8b50c6d3-d648-4edd-a883-4ddd2d18f4ea,947afa80-8bb5-423b-869d-bb5d5fe8872f,"","[{""id"":""call_byjV6N6wimODUiaAXOgWFJzT"",""name"":""spanish_agent""},{""id"":""call_vxRuUwSYpI7dH2N8ozEz6cfr"",""name"":""french_agent""}]",[],1,2025-04-25 13:55:26,2025-04-25 13:55:26
+245c8963-f546-45a8-912b-905ffc7df0e4,947afa80-8bb5-423b-869d-bb5d5fe8872f,,,,2,2025-04-25 13:55:26,2025-04-25 13:55:26
+25f77184-76eb-4b5a-9c88-406190ce694b,2504b9d2-0530-4ad6-9fb6-74e3e2aea16d,"Translate 'Hello, how are you?' to Spanish and French.",,"[{""text"":""Translate 'Hello, how are you?' to Spanish and French.""}]",0,2025-04-25 13:55:26,2025-04-25 13:55:26
+a001cda7-f28f-4bef-9841-0c57d9232ba0,2504b9d2-0530-4ad6-9fb6-74e3e2aea16d,"","[{""id"":""call_byjV6N6wimODUiaAXOgWFJzT"",""name"":""spanish_agent""},{""id"":""call_vxRuUwSYpI7dH2N8ozEz6cfr"",""name"":""french_agent""}]",[],1,2025-04-25 13:55:26,2025-04-25 13:55:26
+4f2b7e39-19f4-49f5-9441-e8d6af565ebe,2504b9d2-0530-4ad6-9fb6-74e3e2aea16d,,,,2,2025-04-25 13:55:26,2025-04-25 13:55:26
+98b1603e-ae08-4e1d-a208-db4b24dab296,2504b9d2-0530-4ad6-9fb6-74e3e2aea16d,"The translation of ""Hello, how are you?"" is:
+
+- Spanish: ""Hola, ¿cómo estás?""
+- French: ""Bonjour, comment ça va ?""",[],[],3,2025-04-25 13:55:26,2025-04-25 13:55:26

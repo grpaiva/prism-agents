@@ -63,6 +63,13 @@ class Agent
     protected ?int $maxSteps = null;
 
     /**
+     * Metadata for tracing and execution
+     * 
+     * @var array
+     */
+    protected array $metadata = [];
+
+    /**
      * Protected constructor to enforce use of static factory methods
      */
     protected function __construct(string $name)
@@ -156,6 +163,42 @@ class Agent
     }
 
     /**
+     * Set metadata for tracing and execution
+     * 
+     * @param array $metadata
+     * @return $this
+     */
+    public function withMetadata(array $metadata): self
+    {
+        $this->metadata = array_merge($this->metadata, $metadata);
+        return $this;
+    }
+
+    /**
+     * Set user ID for tracing
+     * 
+     * @param int|string $userId
+     * @return $this
+     */
+    public function forUser($userId): self
+    {
+        $this->metadata['user_id'] = $userId;
+        return $this;
+    }
+
+    /**
+     * Set parent execution ID for tracing
+     * 
+     * @param string $parentId
+     * @return $this
+     */
+    public function withParent(string $parentId): self
+    {
+        $this->metadata['parent_id'] = $parentId;
+        return $this;
+    }
+
+    /**
      * Create a tool representation of this agent
      *
      * @return \Prism\Prism\Tool
@@ -168,10 +211,23 @@ class Agent
         return \Prism\Prism\Facades\Tool::as($toolName)
             ->for($toolDescription)
             ->withStringParameter('input', 'Input for the agent', true)
-            ->using(function (string $input) {
+            ->using(function ($input) {
+                try {
                 // Execute this agent with the given arguments
                 $runner = new Runner();
-                return ($runner->runAgent($this, $input))->getOutput();
+                    $context = AgentContext::as()->withData($this->metadata);
+                    $result = $runner->runAgent($this, $input, $context);
+                    return $result->getOutput();
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error("Error executing agent as tool: " . $e->getMessage(), [
+                        'agent' => $this->name,
+                        'input' => $input,
+                        'exception' => $e,
+                    ]);
+                    
+                    // Return a friendly error message
+                    return "I encountered an issue while processing your request. Please try again or use a different approach.";
+                }
             });
     }
 
@@ -253,5 +309,15 @@ class Agent
     public function getMaxSteps(): ?int
     {
         return $this->maxSteps;
+    }
+
+    /**
+     * Get metadata
+     * 
+     * @return array
+     */
+    public function getMetadata(): array
+    {
+        return $this->metadata;
     }
 } 

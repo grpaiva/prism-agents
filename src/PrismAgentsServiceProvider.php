@@ -20,44 +20,35 @@ class PrismAgentsServiceProvider extends ServiceProvider
         // $this->loadRoutesFrom(__DIR__.'/routes.php');
 
         if ($this->app->runningInConsole()) {
+            // Publish configuration
             $this->publishes([
                 __DIR__.'/../config/config.php' => config_path('prism-agents.php'),
             ], 'config');
 
-            // Publishing the views.
+            // Publish migrations
+//            $this->publishes([
+//                __DIR__.'/../database/migrations/create_prism_agent_tables.php' => database_path('migrations/'.date('Y_m_d_His', time()).'_create_prism_agent_tables.php'),
+//            ], 'migrations');
+
+            // Publish views if you have any
             $this->publishes([
                 __DIR__.'/../resources/views' => resource_path('views/vendor/prism-agents'),
             ], 'views');
 
-            // Publishing assets.
-            /*$this->publishes([
-                __DIR__.'/../resources/assets' => public_path('vendor/prism-agents'),
-            ], 'assets');*/
-
-            // Publishing the translation files.
-            /*$this->publishes([
-                __DIR__.'/../resources/lang' => resource_path('lang/vendor/prism-agents'),
-            ], 'lang');*/
-
-            // Registering package commands.
+            // Register package commands if you have any
             // $this->commands([]);
-
-            // Publish migration for traces
-            $this->publishes([
-                __DIR__.'/../database/migrations/create_prism_agent_traces_table.php' => database_path('migrations/'.date('Y_m_d_His', time()).'_create_prism_agent_traces_table.php'),
-            ], 'migrations');
         }
 
-        // Load the configuration
-        $this->mergeConfigFrom(__DIR__.'/../config/config.php', 'prism-agents');
-        
-        // Register routes
+        // Load migrations
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
+        // Load views
+        $this->loadViewsFrom(__DIR__.'/../resources/views', 'prism-agents');
+
+        // Load routes if you have any
         if (config('prism-agents.ui.enabled', true)) {
             $this->loadRoutesFrom(__DIR__.'/Http/routes.php');
         }
-        
-        // Register views
-        $this->loadViewsFrom(__DIR__.'/../resources/views/prism-agents', 'prism-agents');
     }
 
     /**
@@ -68,7 +59,7 @@ class PrismAgentsServiceProvider extends ServiceProvider
         // Automatically apply the package configuration
         $this->mergeConfigFrom(__DIR__.'/../config/config.php', 'prism-agents');
 
-        // Since PrismAgents now uses static methods, we only need to register the facade
+        // Register the facade
         $this->app->singleton('prism-agents', function () {
             return new class {
                 // Forward method calls to the PrismAgents class
@@ -78,5 +69,8 @@ class PrismAgentsServiceProvider extends ServiceProvider
                 }
             };
         });
+
+        // Register any service providers that your package depends on
+        // $this->app->register(SomeServiceProvider::class);
     }
 }

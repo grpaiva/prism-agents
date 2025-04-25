@@ -5,7 +5,14 @@ namespace Grpaiva\PrismAgents;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Schema;
+use Grpaiva\PrismAgents\Models\PrismAgentExecution;
+use Grpaiva\PrismAgents\Models\PrismAgentStep;
+use Grpaiva\PrismAgents\Models\PrismAgentToolCall;
+use Grpaiva\PrismAgents\Models\PrismAgentToolResult;
+use Grpaiva\PrismAgents\Models\PrismAgentMessage;
 
 class Trace
 {
@@ -45,18 +52,25 @@ class Trace
     protected ?string $connection;
 
     /**
-     * The table name to store traces in
-     *
-     * @var string
-     */
-    protected string $table;
-
-    /**
      * Optional trace name
      * 
      * @var string|null
      */
     protected ?string $name = null;
+
+    /**
+     * Current execution being traced
+     * 
+     * @var PrismAgentExecution|null
+     */
+    protected ?PrismAgentExecution $currentExecution = null;
+
+    /**
+     * Current step being traced
+     * 
+     * @var PrismAgentStep|null
+     */
+    protected ?PrismAgentStep $currentStep = null;
 
     /**
      * Protected constructor to enforce use of static factory methods
@@ -73,71 +87,62 @@ class Trace
         // If no specific connection is provided, use the default database connection
         $this->connection = Config::get('prism-agents.tracing.connection') ?: config('database.default');
         
-        $this->table = Config::get('prism-agents.tracing.table', 'prism_agent_traces');
-        
         // Log the current tracing configuration for debugging
         \Illuminate\Support\Facades\Log::debug('Trace configuration', [
             'trace_id' => $this->traceId,
             'enabled' => $this->enabled,
-            'connection' => $this->connection,
-            'table' => $this->table
+            'connection' => $this->connection
         ]);
         
         // Verify table existence
-        $this->verifyTraceTable();
+        $this->verifyTraceTables();
     }
 
     /**
-     * Verify if the trace table exists in the database
+     * Verify if the required trace tables exist in the database
      * 
      * @return bool
      */
-    protected function verifyTraceTable(): bool
+    protected function verifyTraceTables(): bool
     {
         try {
             if (!$this->enabled) {
                 return false;
             }
             
-            // Check if the table exists
-            $schema = DB::connection($this->connection)->getSchemaBuilder();
+            // Check if the required tables exist
+            $schema = Schema::connection($this->connection);
             
-            $tableExists = $schema->hasTable($this->table);
+            $requiredTables = [
+                'prism_agent_executions',
+                'prism_agent_steps',
+                'prism_agent_tool_calls',
+                'prism_agent_tool_results',
+                'prism_agent_messages'
+            ];
             
-            if (!$tableExists) {
-                \Illuminate\Support\Facades\Log::warning("Tracing table '{$this->table}' does not exist. Please run migrations.", [
+            $missingTables = [];
+            foreach ($requiredTables as $table) {
+                if (!$schema->hasTable($table)) {
+                    $missingTables[] = $table;
+                }
+            }
+            
+            if (!empty($missingTables)) {
+                \Illuminate\Support\Facades\Log::warning("Tracing tables do not exist: " . implode(', ', $missingTables) . ". Please run migrations.", [
                     'connection' => $this->connection,
-                    'table' => $this->table
+                    'missing_tables' => $missingTables
                 ]);
                 
-                // Disable tracing if the table doesn't exist
+                // Disable tracing if tables don't exist
                 $this->enabled = false;
                 return false;
             }
             
-            // For more detailed verification, we could check the columns too:
-            /*
-            $columns = $schema->getColumnListing($this->table);
-            $requiredColumns = ['id', 'trace_id', 'parent_id', 'name', 'type', 'started_at', 'ended_at', 'metadata'];
-            
-            $missingColumns = array_diff($requiredColumns, $columns);
-            if (!empty($missingColumns)) {
-                \Illuminate\Support\Facades\Log::warning("Tracing table '{$this->table}' is missing columns: " . implode(', ', $missingColumns), [
-                    'connection' => $this->connection,
-                    'table' => $this->table,
-                    'existing_columns' => $columns,
-                    'required_columns' => $requiredColumns
-                ]);
-                
-                // Don't disable tracing but log the issue
-            }
-            */
-            
             return true;
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error("Error verifying trace table: " . $e->getMessage(), [
+            \Illuminate\Support\Facades\Log::error("Error verifying trace tables: " . $e->getMessage(), [
                 'connection' => $this->connection,
-                'table' => $this->table,
                 'exception' => $e
             ]);
             
@@ -213,6 +218,226 @@ class Trace
     }
 
     /**
+     * Start a new execution span
+     *
+     * @param string $name
+     * @param array $metadata
+     * @return string The execution ID
+     */
+    public function startExecution(string $name, array $metadata = []): string
+    {
+        if (!$this->enabled) {
+            return Str::uuid()->toString();
+        }
+
+        $executionId = Str::uuid()->toString();
+
+        $execution = new PrismAgentExecution([
+            'id' => $executionId,
+            'name' => $name,
+            'type' => 'execution',
+            'status' => 'running',
+                'provider' => $metadata['provider'] ?? null,
+                'model' => $metadata['model'] ?? null,
+            'meta' => $metadata,
+            'started_at' => now(),
+        ]);
+
+        if (isset($metadata['user_id'])) {
+            $execution->user_id = $metadata['user_id'];
+        }
+        
+        if (isset($metadata['parent_id'])) {
+            $execution->parent_id = $metadata['parent_id'];
+        }
+
+        $execution->save();
+        $this->currentExecution = $execution;
+
+        return $executionId;
+    }
+
+    /**
+     * Start a new step span
+     *
+     * @param string $name
+     * @param array $metadata
+     * @return string The step ID
+     */
+    public function startStep(string $name, array $metadata = []): string
+    {
+        if (!$this->enabled || !$this->currentExecution) {
+            return Str::uuid()->toString();
+                        }
+                        
+        $stepId = Str::uuid()->toString();
+
+        $step = new PrismAgentStep([
+            'id' => $stepId,
+            'execution_id' => $this->currentExecution->id,
+            'step_index' => $this->currentExecution->steps()->count(),
+            'text' => $metadata['text'] ?? null,
+            'finish_reason' => $metadata['finish_reason'] ?? null,
+            'usage' => $metadata['usage'] ?? null,
+            'meta' => $metadata,
+            'started_at' => now(),
+        ]);
+
+        $step->save();
+        $this->currentStep = $step;
+
+        return $stepId;
+    }
+
+    /**
+     * Start a new tool call span
+     *
+     * @param string $name
+     * @param array $metadata
+     * @return string The tool call ID
+     */
+    public function startToolCall(string $name, array $metadata = []): string
+    {
+        if (!$this->enabled || !$this->currentStep) {
+            return Str::uuid()->toString();
+        }
+
+        $toolCallId = Str::uuid()->toString();
+        
+        $toolCall = new PrismAgentToolCall([
+            'id' => $toolCallId,
+            'step_id' => $this->currentStep->id,
+            'call_id' => $metadata['call_id'] ?? Str::uuid()->toString(),
+            'name' => $name,
+            'args' => $metadata['args'] ?? null,
+            'started_at' => now(),
+        ]);
+
+        $toolCall->save();
+        return $toolCallId;
+    }
+
+    /**
+     * Record a tool result
+     *
+     * @param string $toolCallId
+     * @param array $metadata
+     * @return void
+     */
+    public function recordToolResult(string $toolCallId, array $metadata = []): void
+    {
+        if (!$this->enabled) {
+            return;
+        }
+
+        $resultId = Str::uuid()->toString();
+
+        $toolResult = new PrismAgentToolResult([
+            'id' => $resultId,
+            'tool_call_id' => $toolCallId,
+            'tool_name' => $metadata['tool_name'] ?? 'unknown',
+            'args' => $metadata['args'] ?? null,
+            'result' => $metadata['result'] ?? null,
+            'created_at' => now(),
+        ]);
+        
+        $toolResult->save();
+    }
+
+    /**
+     * Record a message
+     *
+     * @param array $metadata
+     * @return void
+     */
+    public function recordMessage(array $metadata = []): void
+    {
+        if (!$this->enabled || !$this->currentStep) {
+            return;
+        }
+
+        $messageId = Str::uuid()->toString();
+
+        $message = new PrismAgentMessage([
+            'id' => $messageId,
+            'step_id' => $this->currentStep->id,
+            'content' => $metadata['content'] ?? null,
+            'tool_calls' => $metadata['tool_calls'] ?? null,
+            'additional_content' => $metadata['additional_content'] ?? null,
+            'message_index' => $this->currentStep->messages()->count(),
+            'created_at' => now(),
+        ]);
+
+        $message->save();
+    }
+
+    /**
+     * End the current execution
+     *
+     * @param array $metadata
+     * @return void
+     */
+    public function endExecution(array $metadata = []): void
+    {
+        if (!$this->enabled || !$this->currentExecution) {
+            return;
+        }
+
+        $this->currentExecution->update([
+            'status' => $metadata['status'] ?? 'completed',
+            'error_message' => $metadata['error_message'] ?? null,
+            'total_tokens' => $metadata['total_tokens'] ?? null,
+            'prompt_tokens' => $metadata['prompt_tokens'] ?? null,
+            'completion_tokens' => $metadata['completion_tokens'] ?? null,
+            'ended_at' => now(),
+        ]);
+
+        $this->currentExecution->calculateDuration();
+        $this->currentExecution = null;
+    }
+
+    /**
+     * End the current step
+     *
+     * @return void
+     */
+    public function endStep(): void
+    {
+        if (!$this->enabled || !$this->currentStep) {
+            return;
+        }
+
+        $this->currentStep->update([
+            'ended_at' => now(),
+        ]);
+
+        $this->currentStep->calculateDuration();
+        $this->currentStep = null;
+    }
+
+    /**
+     * End a tool call
+     *
+     * @param string $toolCallId
+     * @param array $metadata
+     * @return void
+     */
+    public function endToolCall(string $toolCallId, array $metadata = []): void
+    {
+        if (!$this->enabled) {
+            return;
+        }
+
+        $toolCall = PrismAgentToolCall::find($toolCallId);
+        if ($toolCall) {
+            $toolCall->update([
+                'ended_at' => now(),
+            ]);
+            $toolCall->calculateDuration();
+        }
+    }
+
+    /**
      * Add a result to the trace
      *
      * @param AgentResult $result
@@ -220,175 +445,214 @@ class Trace
      */
     public function addResult(AgentResult $result): self
     {
-        // Get information from the result
-        $agent = $result->getAgent();
-        $metadata = $result->getMetadata() ?? [];
-        
-        // Extract system message information
-        $systemMessage = $metadata['system_message'] ?? null;
-        
-        // Start a span for the agent execution
-        $spanId = $this->startSpan(
-            $agent ? $agent->getName() : 'unknown_agent',
-            'agent_execution',
-            [
-                'agent' => $agent ? $agent->getName() : 'unknown',
-                'provider' => $metadata['provider'] ?? null,
-                'model' => $metadata['model'] ?? null,
-                'input' => $result->getInput(),
-                'metadata' => $metadata,
-                'steps' => $result->getSteps(),
-                'tool_calls' => $result->getToolResults(),
-                'system_message' => $systemMessage,
-            ]
-        );
-        
-        // Store agent tools for later use in identifying handoffs
-        $agentTools = [];
-        if (isset($metadata['tools']) && is_array($metadata['tools'])) {
-            $agentTools = array_map(function($tool) {
-                return $tool['name'] ?? null;
-            }, $metadata['tools']);
-            $agentTools = array_filter($agentTools);
-        }
-        
-        // Add spans for each step if available
-        $steps = $result->getSteps();
-        if (!empty($steps)) {
-            $stepIndex = 0;
-            foreach ($steps as $step) {
-                $stepSpanId = $this->startSpan(
-                    "step_" . $stepIndex,
-                    'llm_step',
-                    [
-                        'step_index' => $stepIndex,
-                        'agent' => $agent ? $agent->getName() : 'unknown',
-                        'text' => $step['text'] ?? '',
-                        'finish_reason' => $step['finish_reason'] ?? null,
-                        'tools' => !empty($step['tool_calls']) ? array_map(fn($tc) => $tc->name ?? $tc->toolName ?? 'unknown', $step['tool_calls']) : [],
-                        'additional_content' => $step['additional_content'] ?? [],
-                    ]
-                );
-                
-                // If there are tool results in this step, create subspans for them
-                if (!empty($step['tool_results'])) {
-                    foreach ($step['tool_results'] as $toolIdx => $toolResult) {
-                        $toolName = $toolResult->toolName ?? 'unknown_tool';
-                        
-                        // Determine if this is an agent-as-tool call (handoff)
-                        // We can check this based on tool name matching an agent name pattern
-                        // or by checking if the metadata contains agent-specific data
-                        $isAgentTool = false;
-                        
-                        // Check if the tool name matches an agent name from our pre-processed list
-                        if (!empty($agentTools)) {
-                            $isAgentTool = in_array($toolName, $agentTools);
-                        }
-                        
-                        // Default to checking if the tool name matches an agent name pattern
-                        // This is a heuristic approach since we don't have direct agent reference
-                        if (!$isAgentTool) {
-                            $isAgentTool = str_contains($toolName, '_agent') || 
-                                           str_contains($toolName, 'Agent') || 
-                                           isset($toolResult->result) && (
-                                               is_string($toolResult->result) && 
-                                               strlen($toolResult->result) > 20
-                                           );
-                        }
-                        
-                        $spanType = $isAgentTool ? 'handoff' : 'tool_call';
-                        
-                        $toolSpanId = $this->startSpan(
-                            "tool_" . $toolName . "_" . $toolIdx,
-                            $spanType,
-                            [
-                                'tool_name' => $toolName,
-                                'args' => $toolResult->args ?? [],
-                                'result' => $toolResult->result ?? null,
-                            ]
-                        );
-                        $this->endSpan($toolSpanId);
-                    }
-                }
-                
-                $this->endSpan($stepSpanId);
-                $stepIndex++;
-            }
-        }
-
-        // End the main agent execution span
-        $this->endSpan($spanId, [
-            'output' => $result->getOutput(),
-            'status' => $result->isSuccess() ? 'success' : 'error',
-            'error' => $result->getError(),
-            'metadata' => $result->getMetadata(),
-        ]);
-
-        return $this;
-    }
-
-    /**
-     * Start a new span
-     *
-     * @param string $name
-     * @param string $type
-     * @param array $metadata
-     * @return string The span ID
-     */
-    public function startSpan(string $name, string $type, array $metadata = []): string
-    {
-        $spanId = Str::uuid()->toString();
-        $parentSpanId = empty($this->activeSpans) ? null : end($this->activeSpans);
-        
-        $span = [
-            'id' => $spanId,
-            'trace_id' => $this->traceId,
-            'parent_id' => $parentSpanId,
-            'name' => $name,
-            'type' => $type,
-            'started_at' => Carbon::now(),
-            'metadata' => $metadata,
-        ];
-        
-        $this->spans[$spanId] = $span;
-        $this->activeSpans[] = $spanId;
-        
-        if ($this->enabled) {
-            $this->saveSpan($span);
-        }
-        
-        return $spanId;
-    }
-
-    /**
-     * End a span
-     *
-     * @param string $spanId
-     * @param array $metadata
-     * @return $this
-     */
-    public function endSpan(string $spanId, array $metadata = []): self
-    {
-        if (!isset($this->spans[$spanId])) {
+        if (!$this->enabled) {
             return $this;
         }
         
-        $span = &$this->spans[$spanId];
-        $span['ended_at'] = Carbon::now();
-        $span['duration'] = $span['ended_at']->diffInMilliseconds($span['started_at']);
-        $span['metadata'] = array_merge($span['metadata'] ?? [], $metadata);
-        
-        // Remove from active spans
-        $index = array_search($spanId, $this->activeSpans);
-        if ($index !== false) {
-            array_splice($this->activeSpans, $index, 1);
+        try {
+            $agent = $result->getAgent();
+            $metadata = $result->getMetadata() ?? [];
+
+            // Start execution
+            $executionId = $this->startExecution(
+                $agent ? $agent->getName() : 'unknown_agent',
+                [
+                    'provider' => $metadata['provider'] ?? null,
+                    'model' => $metadata['model'] ?? null,
+                    'user_id' => $metadata['user_id'] ?? null,
+                    'parent_id' => $metadata['parent_id'] ?? null,
+                ]
+            );
+
+            // Process steps
+            $steps = $result->getSteps();
+            
+            // Debug log for steps structure
+            Log::debug('Steps structure', [
+                'steps_count' => count($steps),
+                'steps_type' => gettype($steps),
+                'first_step_type' => empty($steps) ? 'none' : gettype($steps[0]),
+            ]);
+            
+            if (!empty($steps)) {
+                foreach ($steps as $stepIndex => $step) {
+                    // Debug log step structure
+                    Log::debug('Processing step', [
+                        'step_index' => $stepIndex,
+                        'step_type' => gettype($step),
+                        'step_keys' => is_array($step) ? array_keys($step) : 'not_array',
+                    ]);
+                    
+                    $stepId = $this->startStep('step', [
+                        'text' => is_array($step) && isset($step['text']) ? $step['text'] : 
+                               (is_object($step) && property_exists($step, 'text') ? $step->text : null),
+                        'finish_reason' => is_array($step) && isset($step['finish_reason']) ? $step['finish_reason'] : 
+                                       (is_object($step) && property_exists($step, 'finish_reason') ? $step->finish_reason : 
+                                       (is_object($step) && property_exists($step, 'finishReason') ? $step->finishReason : null)),
+                    ]);
+
+                    // Extract tool calls safely
+                    $toolCalls = [];
+                    if (is_array($step) && isset($step['tool_calls'])) {
+                        $toolCalls = $step['tool_calls'];
+                    } elseif (is_object($step) && property_exists($step, 'tool_calls')) {
+                        $toolCalls = $step->tool_calls;
+                    } elseif (is_object($step) && property_exists($step, 'toolCalls')) {
+                        $toolCalls = $step->toolCalls;
+                    }
+
+                    // Process tool calls
+                    if (!empty($toolCalls)) {
+                        // Debug log tool calls structure
+                        Log::debug('Tool calls structure', [
+                            'count' => count($toolCalls),
+                            'type' => gettype($toolCalls),
+                            'first_tool_call_type' => empty($toolCalls) ? 'none' : gettype($toolCalls[0]),
+                        ]);
+                        
+                        foreach ($toolCalls as $toolCallIndex => $toolCall) {
+                            // Debug log for individual tool call
+                            Log::debug('Processing tool call', [
+                                'tool_call_index' => $toolCallIndex,
+                                'tool_call_type' => gettype($toolCall),
+                                'tool_call_class' => is_object($toolCall) ? get_class($toolCall) : 'not_object',
+                                'tool_call_props' => is_object($toolCall) ? get_object_vars($toolCall) : 'not_object',
+                            ]);
+                            
+                            // Extract name and ID safely
+                            $toolCallName = 'unknown';
+                            $toolCallId = Str::uuid()->toString();
+                            $toolCallArgs = null;
+                            
+                            if (is_array($toolCall)) {
+                                $toolCallName = $toolCall['name'] ?? 'unknown';
+                                $toolCallId = $toolCall['id'] ?? Str::uuid()->toString();
+                                $toolCallArgs = $toolCall['args'] ?? null;
+                            } elseif (is_object($toolCall)) {
+                                $toolCallName = property_exists($toolCall, 'name') ? $toolCall->name : 'unknown';
+                                $toolCallId = property_exists($toolCall, 'id') ? $toolCall->id : Str::uuid()->toString();
+                                $toolCallArgs = property_exists($toolCall, 'args') ? $toolCall->args : null;
+                            }
+                            
+                            // Record the tool call
+                            $dbToolCallId = $this->startToolCall($toolCallName, [
+                                'call_id' => $toolCallId,
+                                'args' => $toolCallArgs,
+                            ]);
+                            
+                            // Extract tool results safely
+                            $toolResults = [];
+                            if (is_array($step) && isset($step['tool_results'])) {
+                                $toolResults = $step['tool_results'];
+                            } elseif (is_object($step) && property_exists($step, 'tool_results')) {
+                                $toolResults = $step->tool_results;
+                            } elseif (is_object($step) && property_exists($step, 'toolResults')) {
+                                $toolResults = $step->toolResults;
+                            }
+                            
+                            // Debug log tool results structure
+                            if (!empty($toolResults)) {
+                                Log::debug('Tool results structure', [
+                                    'count' => count($toolResults),
+                                    'type' => gettype($toolResults),
+                                    'first_result_type' => empty($toolResults) ? 'none' : gettype($toolResults[0]),
+                                ]);
+                            }
+                            
+                            // Process matching tool results
+                            if (!empty($toolResults)) {
+                                foreach ($toolResults as $toolResult) {
+                                    $resultToolCallId = null;
+                                    $resultToolName = 'unknown';
+                                    $resultArgs = null;
+                                    $resultResult = null;
+                                    
+                                    if (is_array($toolResult)) {
+                                        $resultToolCallId = $toolResult['toolCallId'] ?? null;
+                                        $resultToolName = $toolResult['toolName'] ?? 'unknown';
+                                        $resultArgs = $toolResult['args'] ?? null;
+                                        $resultResult = $toolResult['result'] ?? null;
+                                    } elseif (is_object($toolResult)) {
+                                        $resultToolCallId = property_exists($toolResult, 'toolCallId') ? $toolResult->toolCallId : null;
+                                        $resultToolName = property_exists($toolResult, 'toolName') ? $toolResult->toolName : 'unknown';
+                                        $resultArgs = property_exists($toolResult, 'args') ? $toolResult->args : null;
+                                        $resultResult = property_exists($toolResult, 'result') ? $toolResult->result : null;
+                                    }
+                                    
+                                    // Only record results for the current tool call
+                                    if ($resultToolCallId === $toolCallId) {
+                                        $this->recordToolResult($dbToolCallId, [
+                                            'tool_name' => $resultToolName,
+                                            'args' => $resultArgs,
+                                            'result' => $resultResult,
+                                        ]);
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            $this->endToolCall($dbToolCallId);
+                        }
+                    }
+
+                    // Extract messages safely
+                    $messages = [];
+                    if (is_array($step) && isset($step['messages'])) {
+                        $messages = $step['messages'];
+                    } elseif (is_object($step) && property_exists($step, 'messages')) {
+                        $messages = $step->messages;
+                    }
+                    
+                    // Process messages
+                    if (!empty($messages)) {
+                        foreach ($messages as $messageIndex => $message) {
+                            $content = null;
+                            $toolCalls = null;
+                            $additionalContent = null;
+                            
+                            if (is_array($message)) {
+                                $content = $message['content'] ?? null;
+                                $toolCalls = $message['tool_calls'] ?? null;
+                                $additionalContent = $message['additional_content'] ?? null;
+                            } elseif (is_object($message)) {
+                                $content = property_exists($message, 'content') ? $message->content : null;
+                                $toolCalls = property_exists($message, 'toolCalls') ? $message->toolCalls : null;
+                                $additionalContent = property_exists($message, 'additionalContent') ? $message->additionalContent : null;
         }
         
-        if ($this->enabled) {
-            $this->updateSpan($span);
-        }
-        
+                            $this->recordMessage([
+                                'content' => $content,
+                                'tool_calls' => $toolCalls,
+                                'additional_content' => $additionalContent,
+                            ]);
+                        }
+                    }
+                    
+                    // End the step
+                    $this->endStep();
+                }
+            }
+
+            // End execution
+            $this->endExecution([
+                'status' => $result->isSuccess() ? 'completed' : 'failed',
+                'error_message' => $result->getError(),
+                'total_tokens' => $metadata['usage']['total_tokens'] ?? null,
+                'prompt_tokens' => $metadata['usage']['prompt_tokens'] ?? null,
+                'completion_tokens' => $metadata['usage']['completion_tokens'] ?? null,
+            ]);
+
+            return $this;
+        } catch (\Exception $e) {
+            Log::error('Error in addResult: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            // Do not rethrow, just return
         return $this;
+        }
     }
 
     /**
@@ -425,235 +689,6 @@ class Trace
     {
         $this->table = $table;
         return $this;
-    }
-
-    /**
-     * Save a span to the database
-     *
-     * @param array $span
-     * @return void
-     */
-    protected function saveSpan(array $span): void
-    {
-        if (!$this->enabled) {
-            return;
-        }
-        
-        try {
-            // Check which columns exist in the table
-            $schema = DB::connection($this->connection)->getSchemaBuilder();
-            $columns = $schema->getColumnListing($this->table);
-            
-            $metadata = $span['metadata'] ?? [];
-            
-            // Start with essential columns that should always exist
-            $data = [
-                'id' => $span['id'],
-                'trace_id' => $span['trace_id'],
-                'parent_id' => $span['parent_id'],
-                'name' => $span['name'],
-                'type' => $span['type'],
-                'metadata' => json_encode($metadata),
-            ];
-            
-            // For SQLite, ensure timestamps are formatted as strings
-            if (in_array('started_at', $columns)) {
-                $data['started_at'] = $span['started_at'] instanceof Carbon 
-                    ? $span['started_at']->toDateTimeString() 
-                    : $span['started_at'];
-            }
-            
-            if (in_array('ended_at', $columns) && isset($span['ended_at'])) {
-                $data['ended_at'] = $span['ended_at'] instanceof Carbon 
-                    ? $span['ended_at']->toDateTimeString() 
-                    : $span['ended_at'];
-            }
-            
-            if (in_array('duration', $columns) && isset($span['duration'])) {
-                $data['duration'] = $span['duration'];
-            }
-            
-            // Add standard Laravel timestamps if they exist
-            if (in_array('created_at', $columns)) {
-                $data['created_at'] = Carbon::now()->toDateTimeString();
-            }
-            
-            if (in_array('updated_at', $columns)) {
-                $data['updated_at'] = Carbon::now()->toDateTimeString();
-            }
-            
-            // Only add extended columns if they exist in the table
-            $extendedColumns = [
-                'agent_name' => $metadata['agent'] ?? null,
-                'provider' => $metadata['provider'] ?? null,
-                'model' => $metadata['model'] ?? null,
-                'input_text' => $this->truncateText($metadata['input'] ?? null),
-                'output_text' => $this->truncateText($metadata['output'] ?? null),
-                'status' => $metadata['status'] ?? null,
-                'error_message' => $this->truncateText($metadata['error'] ?? null),
-                'tokens_used' => $metadata['metadata']['usage']['total_tokens'] ?? null,
-                'step_count' => isset($metadata['steps']) ? count($metadata['steps']) : null,
-                'tool_call_count' => isset($metadata['tool_calls']) ? count($metadata['tool_calls']) : null,
-            ];
-            
-            foreach ($extendedColumns as $column => $value) {
-                if (in_array($column, $columns)) {
-                    $data[$column] = $value;
-                }
-            }
-            
-            // Log data for debugging
-            \Illuminate\Support\Facades\Log::debug('Saving span to database', [
-                'trace_id' => $span['trace_id'],
-                'span_id' => $span['id'],
-                'table' => $this->table,
-                'connection' => $this->connection,
-                'columns' => $columns,
-                'data_keys' => array_keys($data)
-            ]);
-            
-            // Wrap in a transaction to ensure data consistency
-            $result = DB::connection($this->connection)->transaction(function () use ($data) {
-                return DB::connection($this->connection)->table($this->table)->insert($data);
-            });
-            
-            if (!$result) {
-                \Illuminate\Support\Facades\Log::error('Failed to insert span', [
-                    'trace_id' => $span['trace_id'],
-                    'span_id' => $span['id'],
-                ]);
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Error saving span: ' . $e->getMessage(), [
-                'trace_id' => $span['trace_id'] ?? null,
-                'span_id' => $span['id'] ?? null,
-                'exception' => $e
-            ]);
-        }
-    }
-
-    /**
-     * Update a span in the database
-     *
-     * @param array $span
-     * @return void
-     */
-    protected function updateSpan(array $span): void
-    {
-        if (!$this->enabled) {
-            return;
-        }
-        
-        try {
-            // Check which columns exist in the table
-            $schema = DB::connection($this->connection)->getSchemaBuilder();
-            $columns = $schema->getColumnListing($this->table);
-            
-            $metadata = $span['metadata'] ?? [];
-            
-            // Start with essential columns for updates
-            $data = [
-                'metadata' => json_encode($metadata),
-            ];
-            
-            // For SQLite, ensure timestamps are formatted as strings
-            if (in_array('ended_at', $columns) && isset($span['ended_at'])) {
-                $data['ended_at'] = $span['ended_at'] instanceof Carbon 
-                    ? $span['ended_at']->toDateTimeString() 
-                    : $span['ended_at'];
-            }
-            
-            if (in_array('duration', $columns) && isset($span['duration'])) {
-                $data['duration'] = $span['duration'];
-            }
-            
-            // Add updated_at if it exists
-            if (in_array('updated_at', $columns)) {
-                $data['updated_at'] = Carbon::now()->toDateTimeString();
-            }
-            
-            // Only add extended columns if they exist in the table
-            $extendedColumns = [
-                'output_text' => $this->truncateText($metadata['output'] ?? null),
-                'status' => $metadata['status'] ?? null,
-                'error_message' => $this->truncateText($metadata['error'] ?? null),
-                'tokens_used' => $metadata['metadata']['usage']['total_tokens'] ?? null,
-                'step_count' => isset($metadata['steps']) ? count($metadata['steps']) : null,
-                'tool_call_count' => isset($metadata['tool_calls']) ? count($metadata['tool_calls']) : null,
-            ];
-            
-            foreach ($extendedColumns as $column => $value) {
-                if (in_array($column, $columns)) {
-                    $data[$column] = $value;
-                }
-            }
-            
-            // Log data for debugging
-            \Illuminate\Support\Facades\Log::debug('Updating span in database', [
-                'trace_id' => $span['trace_id'],
-                'span_id' => $span['id'],
-                'table' => $this->table,
-                'connection' => $this->connection,
-                'columns' => $columns,
-                'data_keys' => array_keys($data)
-            ]);
-            
-            // Only proceed if we have data to update
-            if (empty($data)) {
-                \Illuminate\Support\Facades\Log::warning('No updateable columns found for span', [
-                    'trace_id' => $span['trace_id'],
-                    'span_id' => $span['id'],
-                ]);
-                return;
-            }
-            
-            // Wrap in a transaction to ensure data consistency
-            $result = DB::connection($this->connection)->transaction(function () use ($span, $data) {
-                return DB::connection($this->connection)->table($this->table)
-                    ->where('id', $span['id'])
-                    ->update($data);
-            });
-            
-            if ($result === 0) {
-                \Illuminate\Support\Facades\Log::warning('No rows updated for span', [
-                    'trace_id' => $span['trace_id'],
-                    'span_id' => $span['id'],
-                ]);
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Error updating span: ' . $e->getMessage(), [
-                'trace_id' => $span['trace_id'] ?? null,
-                'span_id' => $span['id'] ?? null,
-                'exception' => $e
-            ]);
-        }
-    }
-    
-    /**
-     * Truncate text to a maximum length for database storage
-     * 
-     * @param mixed $text
-     * @param int $maxLength
-     * @return string|null
-     */
-    protected function truncateText($text, int $maxLength = 10000): ?string
-    {
-        if ($text === null) {
-            return null;
-        }
-        
-        // Convert non-string values to string
-        if (!is_string($text)) {
-            $text = is_array($text) || is_object($text) 
-                ? json_encode($text) 
-                : (string) $text;
-        }
-        
-        if (strlen($text) <= $maxLength) {
-            return $text;
-        }
-        
-        return substr($text, 0, $maxLength - 3) . '...';
     }
 
     /**
