@@ -55,7 +55,8 @@
             case 'llm_step':
                 return '💬';
             case 'handoff':
-                return '🔄';
+            // arrow next
+                return '→';
             case 'tool_call':
                 return '🔧';
             default:

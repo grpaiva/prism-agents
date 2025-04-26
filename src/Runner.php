@@ -7,6 +7,9 @@ use Prism\Prism\Prism;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Text\Response;
 use Illuminate\Support\Facades\Log;
+use Prism\Prism\ValueObjects\Messages\AssistantMessage;
+use Prism\Prism\ValueObjects\Messages\SystemMessage;
+use Prism\Prism\ValueObjects\Messages\UserMessage;
 
 class Runner
 {
@@ -132,7 +135,16 @@ class Runner
                 // Assuming input is a conversation history array
                 foreach ($input as $message) {
                     if (isset($message['role']) && isset($message['content'])) {
-                        $prismRequest->withMessage($message['role'], $message['content']);
+                        $messages[] = match ($message['role']) {
+                            'system' => new SystemMessage($message['content']),
+                            'assistant' => new AssistantMessage($message['content']),
+                            default => new UserMessage($message['content']),
+                        };
+
+                        // Add messages to the request
+                        $prismRequest->withMessages($messages);
+                    } else {
+                        throw new \InvalidArgumentException('Invalid message format in input array.');
                     }
                 }
             }
