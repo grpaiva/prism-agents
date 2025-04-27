@@ -1,7 +1,7 @@
 .phpunit.cache
 /vendor
 /.vscode
-/.idea
 /.DS_Store
 /.env
 /.env.local
+.idea
