@@ -75,14 +75,6 @@ class Trace
         
         $this->table = Config::get('prism-agents.tracing.table', 'prism_agent_traces');
         
-        // Log the current tracing configuration for debugging
-        \Illuminate\Support\Facades\Log::debug('Trace configuration', [
-            'trace_id' => $this->traceId,
-            'enabled' => $this->enabled,
-            'connection' => $this->connection,
-            'table' => $this->table
-        ]);
-        
         // Verify table existence
         $this->verifyTraceTable();
     }
@@ -502,16 +494,6 @@ class Trace
                 }
             }
             
-            // Log data for debugging
-            \Illuminate\Support\Facades\Log::debug('Saving span to database', [
-                'trace_id' => $span['trace_id'],
-                'span_id' => $span['id'],
-                'table' => $this->table,
-                'connection' => $this->connection,
-                'columns' => $columns,
-                'data_keys' => array_keys($data)
-            ]);
-            
             // Wrap in a transaction to ensure data consistency
             $result = DB::connection($this->connection)->transaction(function () use ($data) {
                 return DB::connection($this->connection)->table($this->table)->insert($data);
@@ -587,16 +569,6 @@ class Trace
                     $data[$column] = $value;
                 }
             }
-            
-            // Log data for debugging
-            \Illuminate\Support\Facades\Log::debug('Updating span in database', [
-                'trace_id' => $span['trace_id'],
-                'span_id' => $span['id'],
-                'table' => $this->table,
-                'connection' => $this->connection,
-                'columns' => $columns,
-                'data_keys' => array_keys($data)
-            ]);
             
             // Only proceed if we have data to update
             if (empty($data)) {
