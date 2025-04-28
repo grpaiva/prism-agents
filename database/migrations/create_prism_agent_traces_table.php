@@ -8,22 +8,21 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * @return void
      */
-    public function up()
+    public function up(): void
     {
         Schema::create('prism_agent_traces', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->uuid('trace_id')->index();
+            $table->string('trace_id')->index(); // CHANGED from uuid ➔ text
             $table->uuid('parent_id')->nullable()->index();
             $table->string('name');
             $table->string('type'); // agent_execution, step, tool_call, etc.
             $table->timestamp('started_at');
             $table->timestamp('ended_at')->nullable();
-            $table->integer('duration')->nullable()->comment('Duration in milliseconds');
+            $table->decimal('duration', total: 10, places: 3)->nullable()->comment('Duration in milliseconds');
+
             $table->json('metadata')->nullable();
-            
+
             // Additional fields for better analysis
             $table->string('agent_name')->nullable()->index();
             $table->string('provider')->nullable()->index();
@@ -35,9 +34,9 @@ return new class extends Migration
             $table->integer('tokens_used')->nullable();
             $table->integer('step_count')->nullable();
             $table->integer('tool_call_count')->nullable();
-            
+
             $table->timestamps();
-            
+
             // Indexes for efficient querying
             $table->index(['trace_id', 'started_at']);
             $table->index(['status', 'duration']);
@@ -46,11 +45,9 @@ return new class extends Migration
 
     /**
      * Reverse the migrations.
-     *
-     * @return void
      */
-    public function down()
+    public function down(): void
     {
         Schema::dropIfExists('prism_agent_traces');
     }
-}; 
+};
