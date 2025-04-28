@@ -29,11 +29,6 @@ class Runner
     protected ?int $maxSteps = null;
 
     /**
-     * @var array
-     */
-    protected array $clientOptions = [];
-
-    /**
      * Create a new Runner instance
      */
     public function __construct()
@@ -54,18 +49,6 @@ class Runner
         }
         
         $this->trace = $trace;
-        return $this;
-    }
-
-    /**
-     * Set the client options for the Prism client
-     *
-     * @param array $options
-     * @return $this
-     */
-    public function withClientOptions(array $options): self
-    {
-        $this->clientOptions = $options;
         return $this;
     }
 
@@ -109,8 +92,6 @@ class Runner
             foreach ($tools as $tool) {
                 if ($tool instanceof \Prism\Prism\Tool) {
                     $prismTools[] = $tool;
-                } elseif ($tool instanceof \Grpaiva\PrismAgents\Tool) {
-                    $prismTools[] = $tool->getPrismTool();
                 }
             }
             
@@ -127,15 +108,16 @@ class Runner
                 );
             }
 
-            // Set client options if specified
-            if (!empty($this->clientOptions)) {
-                $prismRequest->withClientOptions($this->clientOptions);
-            }
-
             // Set maximum steps if specified
             $maxSteps = $agent->getMaxSteps() ?? $this->maxSteps;
             if ($maxSteps) {
                 $prismRequest->withMaxSteps($maxSteps);
+            }
+
+            // Add client options if specified
+            $clientOptions = $agent->getClientOptions();
+            if ($clientOptions) {
+                $prismRequest->withClientOptions($clientOptions);
             }
             
             // Add tools if there are any

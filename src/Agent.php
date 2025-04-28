@@ -3,6 +3,7 @@
 namespace Grpaiva\PrismAgents;
 
 use Prism\Prism\Enums\Provider;
+use Prism\Prism\Tool;
 
 class Agent
 {
@@ -54,6 +55,13 @@ class Agent
      * @var array
      */
     protected array $inputGuardrails = [];
+
+    /**
+     * Client options for the agent
+     *
+     * @var array
+     */
+    protected array $clientOptions = [];
 
     /**
      * Maximum number of steps for agent to take
@@ -156,11 +164,20 @@ class Agent
     }
 
     /**
+     * Set client options
+     */
+    public function withClientOptions(array $options): self
+    {
+        $this->clientOptions = $options;
+        return $this;
+    }
+
+    /**
      * Create a tool representation of this agent
      *
-     * @return \Prism\Prism\Tool
+     * @return Tool
      */
-    public function asTool(): \Prism\Prism\Tool
+    public function asTool(): Tool
     {
         $toolName = $this->name;
         $toolDescription = $this->handoffDescription ?? "Agent: {$this->name}";
@@ -253,5 +270,15 @@ class Agent
     public function getMaxSteps(): ?int
     {
         return $this->maxSteps;
+    }
+
+    /**
+     * Get client options
+     *
+     * @return array
+     */
+    public function getClientOptions(): array
+    {
+        return $this->clientOptions;
     }
 } 
