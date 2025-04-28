@@ -29,6 +29,11 @@ class Runner
     protected ?int $maxSteps = null;
 
     /**
+     * @var array
+     */
+    protected array $clientOptions = [];
+
+    /**
      * Create a new Runner instance
      */
     public function __construct()
@@ -53,12 +58,24 @@ class Runner
     }
 
     /**
+     * Set the client options for the Prism client
+     *
+     * @param array $options
+     * @return $this
+     */
+    public function withClientOptions(array $options): self
+    {
+        $this->clientOptions = $options;
+        return $this;
+    }
+
+    /**
      * Set the maximum number of steps
      * 
      * @param int $steps
      * @return $this
      */
-    public function steps(int $steps): self
+    public function withMaxSteps(int $steps): self
     {
         $this->maxSteps = $steps;
         return $this;
@@ -108,6 +125,11 @@ class Runner
                     $agent->getProvider(), 
                     $agent->getModel()
                 );
+            }
+
+            // Set client options if specified
+            if (!empty($this->clientOptions)) {
+                $prismRequest->withClientOptions($this->clientOptions);
             }
 
             // Set maximum steps if specified

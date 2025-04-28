@@ -149,7 +149,7 @@ class Agent
      * @param int $steps
      * @return $this
      */
-    public function steps(int $steps): self
+    public function withMaxSteps(int $steps): self
     {
         $this->maxSteps = $steps;
         return $this;
