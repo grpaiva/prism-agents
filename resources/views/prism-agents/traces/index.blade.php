@@ -230,11 +230,6 @@
                                         <span class="text-xs text-gray-500 font-mono truncate max-w-xs">
                                             {{ $trace->trace_id }}
                                         </span>
-                                        @if($trace->agent_name)
-                                            <span class="px-2 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-700">
-                                                {{ $trace->agent_name }}
-                                            </span>
-                                        @endif
                                     </div>
                                 </div>
                             </div>
