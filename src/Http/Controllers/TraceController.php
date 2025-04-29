@@ -16,13 +16,36 @@ class TraceController extends Controller
      */
     public function index(Request $request)
     {
+        // Get per page setting, default to 100
+        $perPage = (int) $request->input('per_page', 100);
+        
+        // Limit to reasonable values
+        $perPage = max(10, min(500, $perPage));
+        
+        // Sort field and direction
+        $sortField = $request->input('sort', 'started_at');
+        $sortDirection = $request->input('direction', 'desc');
+        
+        // Validate sort field to prevent SQL injection
+        $allowedSortFields = ['started_at', 'created_at', 'name', 'type', 'duration', 'status'];
+        if (!in_array($sortField, $allowedSortFields)) {
+            $sortField = 'started_at';
+        }
+        
+        // Validate sort direction
+        $sortDirection = strtolower($sortDirection) === 'asc' ? 'asc' : 'desc';
+        
         $traces = AgentTrace::root()
             ->where('trace_id', '!=', 'agent_runner')
-            ->orderBy('started_at', 'desc')
-            ->paginate(20);
+            ->orderBy($sortField, $sortDirection)
+            ->paginate($perPage)
+            ->withQueryString(); // Preserve other query parameters
         
         return view('prism-agents::traces.index', [
             'traces' => $traces,
+            'perPage' => $perPage,
+            'sortField' => $sortField,
+            'sortDirection' => $sortDirection,
         ]);
     }
     
