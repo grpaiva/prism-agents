@@ -4,6 +4,7 @@
 
 @section('content')
 <div x-data="{
+    tab: 'basic',
     selectedSpanId: null,
     selectedSpan: null,
     hierarchicalTraces: {{ json_encode($hierarchicalTraces) }},
@@ -190,7 +191,7 @@ class="space-y-6">
                         <h4 class="text-sm font-medium text-gray-500 mb-2">Metadata</h4>
                         
                         <div class="border border-gray-200 rounded-md">
-                            <div x-data="{ tab: 'basic' }" class="bg-gray-50 p-1 rounded-t-md border-b border-gray-200">
+                            <div class="bg-gray-50 p-1 rounded-t-md border-b border-gray-200">
                                 <div class="flex space-x-2 text-xs">
                                     <button 
                                         @click="tab = 'basic'" 
