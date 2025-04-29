@@ -265,11 +265,107 @@ try {
 
 ## Advanced Configuration
 
-See the published configuration file (`config/prism-agents.php`) for all available options including:
+The package comes with sensible defaults, but you can customize its behavior by modifying the configuration file published at `config/prism-agents.php`. Here's a detailed explanation of available configuration options:
 
-- Default provider and model settings
-- Tracing configuration
-- Agent defaults like maximum tool calls and handoff depth
-- Tool parameter inference settings
+### Provider and Model Settings
+
+*Not implemented yet.*
+```php
+// config/prism-agents.php
+return [
+    // Default LLM provider and model when none is specified for an agent
+    'default_provider' => env('PRISM_AGENTS_DEFAULT_PROVIDER', 'openai'),
+    'default_model' => env('PRISM_AGENTS_DEFAULT_MODEL', 'gpt-4o'),
+    
+    // ... other configuration options ...
+];
+```
+
+### Tracing Configuration
+*All implemented except for `retention_days`*
+
+```php
+// config/prism-agents.php
+return [
+    // ... other options ...
+    
+    'tracing' => [
+        // Enable or disable tracing functionality
+        'enabled' => env('PRISM_AGENTS_TRACING_ENABLED', true),
+        
+        // The database connection to use for traces (null = default connection)
+        'connection' => env('PRISM_AGENTS_TRACING_CONNECTION', null),
+        
+        // The table name for storing traces
+        'table' => env('PRISM_AGENTS_TRACING_TABLE', 'prism_agent_traces'),
+        
+        // Maximum age of traces to keep (in days, 0 to keep forever)
+        'retention_days' => env('PRISM_AGENTS_TRACING_RETENTION_DAYS', 30),
+    ],
+    
+    // ... other configuration options ...
+];
+```
+
+### Agent Default Settings
+*Not implemented yet.*
+
+```php
+// config/prism-agents.php
+return [
+    // ... other options ...
+    
+    'agent_defaults' => [
+        // Maximum number of tool calls per agent execution (0 for unlimited)
+        'max_tool_calls' => env('PRISM_AGENTS_MAX_TOOL_CALLS', 10),
+        
+        // Maximum depth of handoffs between agents
+        'max_handoff_depth' => env('PRISM_AGENTS_MAX_HANDOFF_DEPTH', 5),
+    ],
+    
+    // ... other configuration options ...
+];
+```
+
+### UI Configuration
+*All implemented.*
+
+```php
+// config/prism-agents.php
+return [
+    // ... other options ...
+    
+    'ui' => [
+        // Whether to enable the web UI for trace visualization
+        'enabled' => env('PRISM_AGENTS_UI_ENABLED', true),
+        
+        // Route path prefix (default: /prism-agents)
+        'route_prefix' => env('PRISM_AGENTS_UI_ROUTE_PREFIX', 'prism-agents'),
+        
+        // Middleware for UI routes
+        'middleware' => env('PRISM_AGENTS_UI_MIDDLEWARE', 'web'),
+    ],
+];
+```
+
+### Environment Variables
+
+For convenience, you can configure many options via environment variables:
+
+| Environment Variable | Description | Default | Status |
+|-------------|-------------|---------|---------|
+| `PRISM_AGENTS_DEFAULT_PROVIDER` | Default LLM provider | `openai` | Coming soon |
+| `PRISM_AGENTS_DEFAULT_MODEL` | Default LLM model | `gpt-4o` | Coming soon |
+| `PRISM_AGENTS_TRACING_ENABLED` | Enable tracing | `true` | Implemented |
+| `PRISM_AGENTS_TRACING_CONNECTION` | Database connection for traces | `null` (default) | Implemented |
+| `PRISM_AGENTS_TRACING_TABLE` | Database table for traces | `prism_agent_traces` | Implemented |
+| `PRISM_AGENTS_TRACING_RETENTION_DAYS` | Days to retain trace data | `30` | Coming soon |
+| `PRISM_AGENTS_MAX_TOOL_CALLS` | Max tool calls per agent execution | `10` | Coming soon |
+| `PRISM_AGENTS_MAX_HANDOFF_DEPTH` | Max depth of agent handoffs | `5` | Coming soon |
+| `PRISM_AGENTS_UI_ENABLED` | Enable web UI | `true` | Implemented |
+| `PRISM_AGENTS_UI_ROUTE_PREFIX` | Route prefix for UI | `prism-agents` | Implemented |
+| `PRISM_AGENTS_UI_MIDDLEWARE` | Middleware for UI routes | `web` | Implemented |
 
 ## License
+
+The PrismAgents package is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
