@@ -90,7 +90,7 @@ if (count($result->getToolResults()) > 0) {
 For more complex tools, you can create dedicated classes:
 
 ```php
-use Grpaiva\PrismAgents\Tool;
+use Prism\Prism\Tool;
 use Illuminate\Support\Facades\Http;
 
 class WeatherTool extends Tool
@@ -154,7 +154,6 @@ echo $result->getOutput();
 ```php
 use Grpaiva\PrismAgents\Agent;
 use Grpaiva\PrismAgents\PrismAgents;
-use Grpaiva\PrismAgents\Trace;
 use Prism\Prism\Enums\Provider;
 
 // Create specialized translation agents
