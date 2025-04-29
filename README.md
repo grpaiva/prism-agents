@@ -2,8 +2,6 @@
 
 PrismAgents is a Laravel package that adds OpenAI Agents SDK-like functionality to [Prism PHP](https://github.com/prism-php/prism). It provides a simple yet powerful way to build agent-based AI applications with features like tools, handoffs between agents, guardrails, and tracing.
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/grpaiva/prism-agents.svg?style=flat-square)](https://packagist.org/packages/grpaiva/prism-agents)
-[![Total Downloads](https://img.shields.io/packagist/dt/grpaiva/prism-agents.svg?style=flat-square)](https://packagist.org/packages/grpaiva/prism-agents)
 ![GitHub Actions](https://github.com/grpaiva/prism-agents/actions/workflows/main.yml/badge.svg)
 
 ## Installation
