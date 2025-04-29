@@ -279,6 +279,48 @@ class="space-y-6">
                                 x-text="selectedSpan?.type">
                             </span>
                             <h3 class="text-base font-medium mt-1" x-text="selectedSpan?.name"></h3>
+                            
+                            <!-- Display args and result for handoffs and tool calls -->
+                            <template x-if="selectedSpan?.type === 'handoff' || selectedSpan?.type === 'tool_call'">
+                                <div class="mt-3 space-y-3">
+                                    <template x-if="selectedSpan?.metadata && selectedSpan?.metadata.tool_name">
+                                        <div class="bg-blue-50 px-3 py-2 rounded-md">
+                                            <span class="text-xs font-medium text-gray-500">Tool:</span>
+                                            <span class="text-sm font-medium text-blue-700 ml-1" x-text="selectedSpan?.metadata.tool_name"></span>
+                                        </div>
+                                    </template>
+                                    
+                                    <template x-if="selectedSpan?.metadata && selectedSpan?.metadata.args">
+                                        <div>
+                                            <span class="text-xs font-medium text-gray-500">Arguments:</span>
+                                            <div class="mt-1 bg-gray-50 px-3 py-2 rounded-md border border-gray-200">
+                                                <template x-if="typeof selectedSpan.metadata.args === 'object'">
+                                                    <div class="space-y-1">
+                                                        <template x-for="(value, key) in selectedSpan.metadata.args" :key="key">
+                                                            <div class="grid grid-cols-5">
+                                                                <span class="text-xs font-medium text-gray-700 col-span-1" x-text="key + ':'"></span>
+                                                                <span class="text-xs text-gray-900 col-span-4 break-words" x-text="typeof value === 'object' ? JSON.stringify(value) : value"></span>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                                <template x-if="typeof selectedSpan.metadata.args !== 'object'">
+                                                    <span class="text-xs text-gray-900" x-text="selectedSpan.metadata.args"></span>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    
+                                    <template x-if="selectedSpan?.metadata && selectedSpan?.metadata.result">
+                                        <div>
+                                            <span class="text-xs font-medium text-gray-500">Result:</span>
+                                            <div class="mt-1 bg-green-50 px-3 py-2 rounded-md border border-green-200">
+                                                <span class="text-xs text-gray-900 whitespace-pre-wrap" x-text="selectedSpan.metadata.result"></span>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
                         </div>
                         <div class="text-right">
                             <p class="text-xs text-gray-500">Duration</p>
