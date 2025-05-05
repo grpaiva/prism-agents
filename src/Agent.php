@@ -2,11 +2,16 @@
 
 namespace Grpaiva\PrismAgents;
 
+use Prism\Prism\Concerns\ConfiguresModels;
+use Prism\Prism\Concerns\ConfiguresProviders;
+use Prism\Prism\Concerns\HasTools;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Tool;
 
 class Agent
 {
+    use HasTools, ConfiguresProviders, ConfiguresModels;
+
     /**
      * The unique name of the agent
      *
@@ -27,27 +32,6 @@ class Agent
      * @var string|null
      */
     protected ?string $handoffDescription = null;
-
-    /**
-     * The tools available to this agent
-     * 
-     * @var array
-     */
-    protected array $tools = [];
-
-    /**
-     * The model provider to use (OpenAI, Anthropic, etc)
-     * 
-     * @var Provider|null
-     */
-    protected ?Provider $provider = null;
-
-    /**
-     * The model to use for this agent
-     * 
-     * @var string|null
-     */
-    protected ?string $model = null;
 
     /**
      * Guardrails for validating input
@@ -110,32 +94,6 @@ class Agent
     public function withHandoffDescription(string $description): self
     {
         $this->handoffDescription = $description;
-        return $this;
-    }
-
-    /**
-     * Set the tools for this agent
-     * 
-     * @param array $tools
-     * @return $this
-     */
-    public function withTools(array $tools): self
-    {
-        $this->tools = $tools;
-        return $this;
-    }
-
-    /**
-     * Set the provider and model
-     * 
-     * @param Provider $provider
-     * @param string $model
-     * @return $this
-     */
-    public function using(Provider $provider, string $model): self
-    {
-        $this->provider = $provider;
-        $this->model = $model;
         return $this;
     }
 
@@ -223,6 +181,16 @@ class Agent
     }
 
     /**
+     * Get the agent's provider
+     *
+     * @return Provider
+     */
+    public function getProvider(): Provider
+    {
+        return $this->provider;
+    }
+
+    /**
      * Get the agent's tools
      * 
      * @return array
@@ -242,15 +210,6 @@ class Agent
         return $this->inputGuardrails;
     }
 
-    /**
-     * Get the provider
-     * 
-     * @return Provider|null
-     */
-    public function getProvider(): ?Provider
-    {
-        return $this->provider;
-    }
 
     /**
      * Get the model
