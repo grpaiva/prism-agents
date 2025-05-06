@@ -1,4 +1,4 @@
-.phpunit.cache
+/.phpunit.cache
 /vendor
 /.vscode
 /.DS_Store

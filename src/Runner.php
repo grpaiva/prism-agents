@@ -355,20 +355,6 @@ class Runner
     }
 
     /**
-     * Map Prism's provider name to Provider enum
-     */
-    protected function mapProviderName(string $provider): Provider
-    {
-        $map = [
-            'openai' => Provider::OpenAI,
-            'anthropic' => Provider::Anthropic,
-            // Add more mappings as needed
-        ];
-
-        return $map[strtolower($provider)] ?? Provider::OpenAI;
-    }
-
-    /**
      * Safely extract provider information from Meta object
      *
      * @param  object  $meta
