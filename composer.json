@@ -18,7 +18,7 @@
     "require": {
         "php": "^8.2",
         "laravel/framework": "^11.0|^12.0",
-        "prism-php/prism": "^0.65.1"
+        "prism-php/prism": "^0.66.0"
     },
     "require-dev": {
         "laravel/pint": "^1.22",
