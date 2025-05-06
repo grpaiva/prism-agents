@@ -1,13 +1,12 @@
 <?php
 
 use Grpaiva\PrismAgents\Agent;
-use Grpaiva\PrismAgents\PrismAgents;
-use Prism\Prism\Enums\Provider;
-use Prism\Prism\Tool;
 use Grpaiva\PrismAgents\AgentResult;
 use Grpaiva\PrismAgents\Tests\TestHelpers\MocksTrait;
 use Grpaiva\PrismAgents\Tests\TestHelpers\PrismMockTrait;
 use Mockery as m;
+use Prism\Prism\Enums\Provider;
+use Prism\Prism\Tool;
 
 uses(MocksTrait::class, PrismMockTrait::class);
 
@@ -16,7 +15,7 @@ beforeEach(function () {
     $this->agent = Agent::as('assistant')
         ->withInstructions('You are a helpful assistant.')
         ->using(Provider::OpenAI, 'gpt-4o');
-        
+
     // Create a mock result
     $this->result = m::mock(AgentResult::class);
     $this->result->shouldReceive('getOutput')->andReturn('This is a mocked response from the AI.');
@@ -36,7 +35,7 @@ test('agent can be created correctly', function () {
 test('agent with tools can be created correctly', function () {
     // Mock a weather tool
     $weatherTool = $this->mockTool('get_weather', 'Get the current weather for a location');
-    
+
     // Create an agent with the tool
     $agent = Agent::as('weather_assistant')
         ->withInstructions('You are a helpful assistant that can check the weather.')
@@ -47,4 +46,4 @@ test('agent with tools can be created correctly', function () {
         ->and($agent->getName())->toBe('weather_assistant')
         ->and($agent->getTools())->toHaveCount(1)
         ->and($agent->getTools()[0]->name())->toBe('get_weather');
-}); 
+});

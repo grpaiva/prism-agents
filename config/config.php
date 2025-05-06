@@ -15,7 +15,7 @@ return [
     */
     'default_provider' => env('PRISM_AGENTS_DEFAULT_PROVIDER', 'openai'),
     'default_model' => env('PRISM_AGENTS_DEFAULT_MODEL', 'gpt-4o'),
-    
+
     /*
     |--------------------------------------------------------------------------
     | Tracing Configuration
@@ -27,17 +27,17 @@ return [
     */
     'tracing' => [
         'enabled' => env('PRISM_AGENTS_TRACING_ENABLED', true),
-        
+
         // The database connection to use for traces (null = default)
         'connection' => env('PRISM_AGENTS_TRACING_CONNECTION', null),
-        
+
         // The table name for storing traces
         'table' => env('PRISM_AGENTS_TRACING_TABLE', 'prism_agent_traces'),
-        
+
         // Maximum age of traces to keep (in days, 0 to keep forever)
         'retention_days' => env('PRISM_AGENTS_TRACING_RETENTION_DAYS', 30),
     ],
-    
+
     /*
     |--------------------------------------------------------------------------
     | Agent Defaults
@@ -49,11 +49,11 @@ return [
     'agent_defaults' => [
         // Maximum number of tool calls per agent execution (0 for unlimited)
         'max_tool_calls' => env('PRISM_AGENTS_MAX_TOOL_CALLS', 10),
-        
+
         // Maximum depth of handoffs between agents
         'max_handoff_depth' => env('PRISM_AGENTS_MAX_HANDOFF_DEPTH', 5),
     ],
-    
+
     /*
     |--------------------------------------------------------------------------
     | Tool Configuration
@@ -78,10 +78,10 @@ return [
     'ui' => [
         // Whether to enable the web UI
         'enabled' => env('PRISM_AGENTS_UI_ENABLED', true),
-        
+
         // Route path prefix (default: /prism-agents)
         'route_prefix' => env('PRISM_AGENTS_UI_ROUTE_PREFIX', 'prism-agents'),
-        
+
         // Middleware for UI routes
         'middleware' => env('PRISM_AGENTS_UI_MIDDLEWARE', 'web'),
     ],

@@ -14,33 +14,25 @@ use Prism\Prism\Tool;
 
 class Agent
 {
-    use HasTools, ConfiguresClient, ConfiguresGeneration, ConfiguresModels, ConfiguresProviders, ConfiguresTools;
+    use ConfiguresClient, ConfiguresGeneration, ConfiguresModels, ConfiguresProviders, ConfiguresTools, HasTools;
 
     /**
      * The unique name of the agent
-     *
-     * @var string
      */
     protected string $name;
 
     /**
      * Instructions for the agent
-     *
-     * @var string
      */
     protected string $instructions = '';
 
     /**
      * Description of this agent when used as a handoff target
-     * 
-     * @var string|null
      */
     protected ?string $handoffDescription = null;
 
     /**
      * Guardrails for validating input
-     * 
-     * @var array
      */
     protected array $inputGuardrails = [];
 
@@ -54,9 +46,6 @@ class Agent
 
     /**
      * Create a new agent instance with builder pattern
-     * 
-     * @param string $name
-     * @return static
      */
     public static function as(string $name): static
     {
@@ -65,64 +54,61 @@ class Agent
 
     /**
      * Set the agent's instructions
-     * 
-     * @param string $instructions
+     *
      * @return $this
      */
     public function withInstructions(string $instructions): self
     {
         $this->instructions = $instructions;
+
         return $this;
     }
 
     /**
      * Set the handoff description when used as a tool
-     * 
-     * @param string $description
+     *
      * @return $this
      */
     public function withHandoffDescription(string $description): self
     {
         $this->handoffDescription = $description;
+
         return $this;
     }
 
     /**
      * Set input guardrails
-     * 
-     * @param array $guardrails
+     *
      * @return $this
      */
     public function withInputGuardrails(array $guardrails): self
     {
         $this->inputGuardrails = $guardrails;
+
         return $this;
     }
 
     /**
      * Create a tool representation of this agent
-     *
-     * @return Tool
      */
     public function asTool(): Tool
     {
         $toolName = $this->name;
         $toolDescription = $this->handoffDescription ?? "Agent: {$this->name}";
-        
+
         return \Prism\Prism\Facades\Tool::as($toolName)
             ->for($toolDescription)
             ->withStringParameter('input', 'Input for the agent', true)
             ->using(function (string $input) {
                 // Execute this agent with the given arguments
-                $runner = new Runner();
-                return ($runner->runAgent($this, $input))->getOutput();
+                $runner = new Runner;
+
+                return $runner->runAgent($this, $input)->getOutput();
             });
     }
 
     /**
      * Get the agent's name
-     * 
-     * @return string
      */
     public function getName(): string
     {
@@ -131,8 +117,6 @@ class Agent
 
     /**
      * Get the agent's instructions
-     * 
-     * @return string
      */
     public function getInstructions(): string
     {
@@ -141,8 +125,6 @@ class Agent
 
     /**
      * Get the agent's handoff description
-     * 
-     * @return string|null
      */
     public function getHandoffDescription(): ?string
     {
@@ -151,8 +133,6 @@ class Agent
 
     /**
      * Get the agent's provider
-     *
-     * @return Provider
      */
     public function getProvider(): Provider
     {
@@ -161,8 +141,6 @@ class Agent
 
     /**
      * Get the agent's tools
-     * 
-     * @return array
      */
     public function getTools(): array
     {
@@ -171,8 +149,6 @@ class Agent
 
     /**
      * Get input guardrails
-     * 
-     * @return array
      */
     public function getInputGuardrails(): array
     {
@@ -181,8 +157,6 @@ class Agent
 
     /**
      * Get the model
-     * 
-     * @return string|null
      */
     public function getModel(): ?string
     {
@@ -191,8 +165,6 @@ class Agent
 
     /**
      * Get max steps
-     * 
-     * @return int|null
      */
     public function getMaxSteps(): ?int
     {
@@ -201,8 +173,6 @@ class Agent
 
     /**
      * Get client options
-     *
-     * @return array
      */
     public function getClientOptions(): array
     {
@@ -211,8 +181,6 @@ class Agent
 
     /**
      * Get client retry options
-     *
-     * @return array
      */
     public function getClientRetry(): array
     {
@@ -221,8 +189,6 @@ class Agent
 
     /**
      * Get the max tokens
-     *
-     * @return int|null
      */
     public function getMaxTokens(): ?int
     {
@@ -231,8 +197,6 @@ class Agent
 
     /**
      * Get the temperature
-     *
-     * @return float|null
      */
     public function getTemperature(): ?float
     {
@@ -241,8 +205,6 @@ class Agent
 
     /**
      * Get the top P
-     *
-     * @return float|null
      */
     public function getTopP(): ?float
     {
@@ -251,12 +213,9 @@ class Agent
 
     /**
      * Get the tool choice
-     *
-     * @return string|ToolChoice|null
      */
     public function getToolChoice(): string|ToolChoice|null
     {
         return $this->toolChoice;
     }
-
-} 
+}

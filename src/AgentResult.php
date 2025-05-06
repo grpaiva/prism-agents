@@ -2,42 +2,32 @@
 
 namespace Grpaiva\PrismAgents;
 
-use Illuminate\Support\Collection;
-
 class AgentResult
 {
     /**
      * The agent that produced this result
-     * 
-     * @var Agent|null
      */
     protected ?Agent $agent = null;
 
     /**
      * The input that was given to the agent
-     * 
+     *
      * @var mixed
      */
     protected $input = null;
 
     /**
      * The output from the agent
-     *
-     * @var string|null
      */
     protected ?string $output = null;
 
     /**
      * Tool results collected during execution
-     *
-     * @var array
      */
     protected array $toolResults = [];
 
     /**
      * Steps taken during execution
-     *
-     * @var array
      */
     protected array $steps = [];
 
@@ -50,36 +40,29 @@ class AgentResult
 
     /**
      * Error message if any
-     * 
-     * @var string|null
      */
     protected ?string $error = null;
-    
+
     /**
      * Response metadata
-     * 
-     * @var array
      */
     protected array $metadata = [];
 
     /**
      * Protected constructor to enforce static factory methods
-     * 
-     * @param Agent|null $agent
-     * @param mixed $input
+     *
+     * @param  mixed  $input
      */
     protected function __construct(?Agent $agent = null, $input = null)
     {
         $this->agent = $agent;
         $this->input = $input;
     }
-    
+
     /**
      * Create a new result instance
-     * 
-     * @param Agent|null $agent
-     * @param mixed $input
-     * @return static
+     *
+     * @param  mixed  $input
      */
     public static function create(?Agent $agent = null, $input = null): static
     {
@@ -89,19 +72,17 @@ class AgentResult
     /**
      * Set the output
      *
-     * @param string $output
      * @return $this
      */
     public function setOutput(string $output): self
     {
         $this->output = $output;
+
         return $this;
     }
 
     /**
      * Get the output
-     *
-     * @return string|null
      */
     public function getOutput(): ?string
     {
@@ -110,42 +91,38 @@ class AgentResult
 
     /**
      * Set an error message
-     * 
-     * @param string $error
+     *
      * @return $this
      */
     public function setError(string $error): self
     {
         $this->error = $error;
+
         return $this;
     }
 
     /**
      * Get the error message
-     * 
-     * @return string|null
      */
     public function getError(): ?string
     {
         return $this->error;
     }
-    
+
     /**
      * Set response metadata
-     * 
-     * @param array $metadata
+     *
      * @return $this
      */
     public function setMetadata(array $metadata): self
     {
         $this->metadata = $metadata;
+
         return $this;
     }
-    
+
     /**
      * Get response metadata
-     * 
-     * @return array
      */
     public function getMetadata(): array
     {
@@ -154,8 +131,6 @@ class AgentResult
 
     /**
      * Check if the result is successful (no error)
-     * 
-     * @return bool
      */
     public function isSuccess(): bool
     {
@@ -165,8 +140,7 @@ class AgentResult
     /**
      * Add a tool result
      *
-     * @param string $toolName
-     * @param mixed $result
+     * @param  mixed  $result
      * @return $this
      */
     public function addToolResult(string $toolName, $result): self
@@ -175,13 +149,12 @@ class AgentResult
             'toolName' => $toolName,
             'result' => $result,
         ];
+
         return $this;
     }
 
     /**
      * Get all tool results
-     *
-     * @return array
      */
     public function getToolResults(): array
     {
@@ -191,19 +164,18 @@ class AgentResult
     /**
      * Add a step
      *
-     * @param mixed $step
+     * @param  mixed  $step
      * @return $this
      */
     public function addStep($step): self
     {
         $this->steps[] = $step;
+
         return $this;
     }
 
     /**
      * Get all steps
-     *
-     * @return array
      */
     public function getSteps(): array
     {
@@ -213,12 +185,13 @@ class AgentResult
     /**
      * Set structured output
      *
-     * @param mixed $output
+     * @param  mixed  $output
      * @return $this
      */
     public function setStructuredOutput($output): self
     {
         $this->structuredOutput = $output;
+
         return $this;
     }
 
@@ -234,8 +207,6 @@ class AgentResult
 
     /**
      * Get the agent that produced this result
-     * 
-     * @return Agent|null
      */
     public function getAgent(): ?Agent
     {
@@ -244,7 +215,7 @@ class AgentResult
 
     /**
      * Get the input that was given to the agent
-     * 
+     *
      * @return mixed
      */
     public function getInput()
@@ -254,23 +225,19 @@ class AgentResult
 
     /**
      * Check if the result has output
-     *
-     * @return bool
      */
     public function hasOutput(): bool
     {
-        return !empty($this->output);
+        return ! empty($this->output);
     }
 
     /**
      * Convert the result to an array for input to another agent
-     *
-     * @return array
      */
     public function toInputArray(): array
     {
         $messages = [];
-        
+
         // Add output if exists
         if ($this->output) {
             $messages[] = [
@@ -278,25 +245,23 @@ class AgentResult
                 'content' => $this->output,
             ];
         }
-        
+
         // Add tool calls and results
         foreach ($this->toolResults as $toolResult) {
             $messages[] = [
                 'role' => 'tool',
                 'toolName' => $toolResult['toolName'],
-                'content' => is_string($toolResult['result']) 
-                    ? $toolResult['result'] 
+                'content' => is_string($toolResult['result'])
+                    ? $toolResult['result']
                     : json_encode($toolResult['result']),
             ];
         }
-        
+
         return $messages;
     }
 
     /**
      * Convert the result to an array
-     *
-     * @return array
      */
     public function toArray(): array
     {
@@ -315,11 +280,9 @@ class AgentResult
 
     /**
      * Get the result as string (output)
-     * 
-     * @return string
      */
     public function __toString(): string
     {
         return (string) $this->output;
     }
-} 
+}

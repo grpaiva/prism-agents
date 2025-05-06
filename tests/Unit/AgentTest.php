@@ -1,9 +1,8 @@
 <?php
 
 use Grpaiva\PrismAgents\Agent;
-use Prism\Prism\Enums\Provider;
-use Mockery as m;
 use Grpaiva\PrismAgents\Tests\TestHelpers\MocksTrait;
+use Prism\Prism\Enums\Provider;
 
 uses(MocksTrait::class);
 
@@ -21,7 +20,7 @@ test('agent can be constructed with builder pattern', function () {
 
 test('agent can add tools', function () {
     $mockTool = $this->mockTool('mock_tool');
-    
+
     $agent = Agent::as('assistant')
         ->withInstructions('You are a helpful assistant.')
         ->using(Provider::OpenAI, 'gpt-4o')
@@ -78,4 +77,3 @@ test('agent can configure client', function () {
     expect($agent->getClientOptions())->toBe(['timeout' => 30])
         ->and($agent->getClientRetry())->toBe([3, 100, null, false]);
 });
-

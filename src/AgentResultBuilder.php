@@ -9,15 +9,11 @@ class AgentResultBuilder
 {
     /**
      * The agent result
-     *
-     * @var AgentResult
      */
     protected AgentResult $result;
 
     /**
      * Create a new builder instance
-     *
-     * @param AgentResult $result
      */
     public function __construct(AgentResult $result)
     {
@@ -27,8 +23,7 @@ class AgentResultBuilder
     /**
      * Add trace to the result
      *
-     * @param Trace|string $trace Trace object or trace name
-     * @return AgentResult
+     * @param  Trace|string  $trace  Trace object or trace name
      */
     public function withTrace(Trace|string $trace): AgentResult
     {
@@ -38,13 +33,12 @@ class AgentResultBuilder
         }
 
         $trace->addResult($this->result);
+
         return $this->result;
     }
 
     /**
      * Get the underlying agent result
-     *
-     * @return AgentResult
      */
     public function get(): AgentResult
     {
@@ -54,8 +48,6 @@ class AgentResultBuilder
     /**
      * Allow direct access to agent result methods
      *
-     * @param string $name
-     * @param array $arguments
      * @return mixed
      */
     public function __call(string $name, array $arguments)

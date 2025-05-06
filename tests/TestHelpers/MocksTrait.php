@@ -2,8 +2,8 @@
 
 namespace Grpaiva\PrismAgents\Tests\TestHelpers;
 
-use Prism\Prism\Tool;
 use Mockery as m;
+use Prism\Prism\Tool;
 
 trait MocksTrait
 {
@@ -18,17 +18,17 @@ trait MocksTrait
         $tool->shouldReceive('__invoke')->andReturn('Mock tool result');
         $tool->shouldReceive('parameters')->andReturn([]);
         $tool->shouldReceive('requiredParameters')->andReturn([]);
-        
+
         return $tool;
     }
-    
+
     /**
      * Create a mockery alias
-     * 
+     *
      * This is different from the Orchestra\Testbench\TestCase::partialMock
      */
     protected function createMockeryAlias(string $class)
     {
-        return m::mock('alias:' . $class);
+        return m::mock('alias:'.$class);
     }
-} 
+}

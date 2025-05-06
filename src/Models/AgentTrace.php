@@ -97,7 +97,7 @@ class AgentTrace extends Model
 
     /**
      * Default attribute values.
-     * 
+     *
      * @var array
      */
     protected $attributes = [
@@ -107,19 +107,18 @@ class AgentTrace extends Model
     /**
      * Create a new model instance.
      *
-     * @param array $attributes
      * @return void
      */
     public function __construct(array $attributes = [])
     {
         // Set the connection from config immediately
-        if (!$this->getConnectionName()) {
+        if (! $this->getConnectionName()) {
             $connection = Config::get('prism-agents.tracing.connection') ?: config('database.default');
             $this->setConnection($connection);
         }
 
         // Set default timestamp for started_at if not provided
-        if (!isset($attributes['started_at'])) {
+        if (! isset($attributes['started_at'])) {
             $attributes['started_at'] = now();
         }
 
@@ -135,7 +134,7 @@ class AgentTrace extends Model
 
         static::creating(function ($model) {
             // Ensure started_at is set when creating
-            if (!$model->started_at) {
+            if (! $model->started_at) {
                 $model->started_at = now();
             }
         });
@@ -222,22 +221,22 @@ class AgentTrace extends Model
         if ($this->parent_id === null) {
             $tableName = $this->getTable();
             $connection = $this->getConnectionName();
-            
+
             // Use a cached value if it exists in the handoff_count column
             if (isset($this->attributes['handoff_count']) && $this->attributes['handoff_count'] !== null) {
                 return (int) $this->attributes['handoff_count'];
             }
-            
+
             // Use a recursive query to find all descendants of this trace
             $descendants = $this->getAllDescendantIds();
-            
+
             // Count handoffs among descendants
             return DB::connection($connection)->table($tableName)
                 ->whereIn('id', $descendants)
                 ->where('type', 'handoff')
                 ->count();
         }
-        
+
         // Otherwise just count direct handoffs
         return $this->handoffs()->count();
     }
@@ -251,29 +250,29 @@ class AgentTrace extends Model
         if (isset($this->attributes['tool_call_count']) && $this->attributes['tool_call_count'] !== null) {
             return (int) $this->attributes['tool_call_count'];
         }
-        
+
         // If this is a root trace, count all tool calls in this trace hierarchy
         if ($this->parent_id === null) {
             $tableName = $this->getTable();
             $connection = $this->getConnectionName();
-            
+
             // Use a recursive query to find all descendants of this trace
             $descendants = $this->getAllDescendantIds();
-            
+
             // Count tool calls among descendants
             return DB::connection($connection)->table($tableName)
                 ->whereIn('id', $descendants)
                 ->where('type', 'tool_call')
                 ->count();
         }
-        
+
         // Otherwise just count direct tool calls
         return $this->toolCalls()->count();
     }
 
     /**
      * Helper method to get all descendant IDs recursively.
-     * 
+     *
      * @return array
      */
     private function getAllDescendantIds()
@@ -281,29 +280,29 @@ class AgentTrace extends Model
         $tableName = $this->getTable();
         $connection = $this->getConnectionName();
         $traceId = $this->id;
-        
+
         // Start with direct children
         $descendants = DB::connection($connection)->table($tableName)
             ->where('parent_id', $traceId)
             ->pluck('id')
             ->toArray();
-            
+
         // Add indirect descendants recursively
         $newDescendants = $descendants;
-        while (!empty($newDescendants)) {
+        while (! empty($newDescendants)) {
             $nextLevel = DB::connection($connection)->table($tableName)
                 ->whereIn('parent_id', $newDescendants)
                 ->pluck('id')
                 ->toArray();
-                
+
             if (empty($nextLevel)) {
                 break;
             }
-            
+
             $descendants = array_merge($descendants, $nextLevel);
             $newDescendants = $nextLevel;
         }
-        
+
         return $descendants;
     }
 
@@ -315,9 +314,9 @@ class AgentTrace extends Model
         if ($this->duration === null) {
             return 'N/A';
         }
-        
+
         // Use absolute value and show with 2 decimal places
-        return number_format(abs($this->duration), 2) . ' ms';
+        return number_format(abs($this->duration), 2).' ms';
     }
 
     /**
@@ -344,7 +343,7 @@ class AgentTrace extends Model
         if ($this->type === 'handoff' && isset($this->metadata['tool_name'])) {
             return $this->metadata['tool_name'];
         }
-        
+
         return $this->name;
     }
 
@@ -356,7 +355,7 @@ class AgentTrace extends Model
         if ($this->type === 'llm_step' && isset($this->metadata['step_index'])) {
             return $this->metadata['step_index'];
         }
-        
+
         return null;
     }
 
@@ -368,44 +367,44 @@ class AgentTrace extends Model
         if ($this->type === 'handoff' && isset($this->metadata['tool_name'])) {
             return $this->metadata['tool_name'];
         }
-        
+
         return null;
     }
 
     /**
      * Build a hierarchical structure for a trace and its descendants.
      *
-     * @param string $traceId The ID of the root trace
+     * @param  string  $traceId  The ID of the root trace
      * @return array
      */
     public static function buildHierarchy($traceId)
     {
         // Get the root trace
         $rootTrace = self::find($traceId);
-        if (!$rootTrace) {
+        if (! $rootTrace) {
             return [];
         }
-        
+
         // Get all descendants of this trace using a recursive CTE
         $allTraces = self::where(function ($query) use ($traceId) {
-                $query->where('id', $traceId)
-                      ->orWhere(function ($q) use ($traceId) {
-                          // Find traces that are part of this hierarchy by traversing parent_id
-                          $rootTrace = self::find($traceId);
-                          if ($rootTrace) {
-                              $q->where('trace_id', $rootTrace->trace_id)
-                                ->whereExists(function ($subquery) use ($traceId) {
-                                    $subquery->selectRaw(1)
-                                        ->from('prism_agent_traces as t')
-                                        ->whereRaw('prism_agent_traces.parent_id = t.id')
-                                        ->whereRaw('t.id = ? OR t.parent_id = ?', [$traceId, $traceId]);
-                                });
-                          }
-                      });
-            })
+            $query->where('id', $traceId)
+                ->orWhere(function ($q) use ($traceId) {
+                    // Find traces that are part of this hierarchy by traversing parent_id
+                    $rootTrace = self::find($traceId);
+                    if ($rootTrace) {
+                        $q->where('trace_id', $rootTrace->trace_id)
+                            ->whereExists(function ($subquery) use ($traceId) {
+                                $subquery->selectRaw(1)
+                                    ->from('prism_agent_traces as t')
+                                    ->whereRaw('prism_agent_traces.parent_id = t.id')
+                                    ->whereRaw('t.id = ? OR t.parent_id = ?', [$traceId, $traceId]);
+                            });
+                    }
+                });
+        })
             ->orderBy('started_at')
             ->get();
-            
+
         // Build a hierarchy lookup table
         $tracesById = [];
         foreach ($allTraces as $trace) {
@@ -415,27 +414,27 @@ class AgentTrace extends Model
                 'level' => 0,
             ];
         }
-        
+
         // Build the hierarchy
         $result = [];
         foreach ($allTraces as $trace) {
             if ($trace->id === $traceId) {
                 // Root trace
                 $result[] = &$tracesById[$trace->id];
-            } else if (isset($tracesById[$trace->parent_id])) {
+            } elseif (isset($tracesById[$trace->parent_id])) {
                 // Add as child and set level
                 $tracesById[$trace->id]['level'] = $tracesById[$trace->parent_id]['level'] + 1;
                 $tracesById[$trace->parent_id]['children'][] = &$tracesById[$trace->id];
             }
         }
-        
+
         // Flatten the hierarchy into a display list with levels
         $flatList = [];
         self::flattenHierarchy($result, $flatList, true); // Root is expanded by default
-        
+
         return $flatList;
     }
-    
+
     /**
      * Helper method to flatten a hierarchical trace structure.
      */
@@ -445,11 +444,11 @@ class AgentTrace extends Model
             // Add the current item - always visible
             $item['visible'] = true;
             $result[] = $item;
-            
+
             // Add its children
-            if (!empty($item['children'])) {
+            if (! empty($item['children'])) {
                 self::flattenHierarchy($item['children'], $result, true);
             }
         }
     }
-} 
+}

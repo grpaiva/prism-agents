@@ -1,26 +1,27 @@
 <?php
 
+use Grpaiva\PrismAgents\AgentContext;
 use Grpaiva\PrismAgents\Guardrail;
 use Grpaiva\PrismAgents\GuardrailResult;
-use Grpaiva\PrismAgents\AgentContext;
 use Mockery as m;
 
 test('guardrail can be created and pass input validation', function () {
     $context = m::mock(AgentContext::class);
 
-    $guardrail = new class('test_guardrail') extends Guardrail {
+    $guardrail = new class('test_guardrail') extends Guardrail
+    {
         public function __construct(string $name)
         {
             $this->name = $name;
         }
-        
+
         public function check($input, AgentContext $context): GuardrailResult
         {
             // Simple validation - input must be at least 5 characters
             if (is_string($input) && strlen($input) < 5) {
                 return GuardrailResult::fail('Input must be at least 5 characters', 400);
             }
-            
+
             return GuardrailResult::pass();
         }
     };
@@ -35,19 +36,20 @@ test('guardrail can be created and pass input validation', function () {
 test('guardrail can detect invalid input', function () {
     $context = m::mock(AgentContext::class);
 
-    $guardrail = new class('test_guardrail') extends Guardrail {
+    $guardrail = new class('test_guardrail') extends Guardrail
+    {
         public function __construct(string $name)
         {
             $this->name = $name;
         }
-        
+
         public function check($input, AgentContext $context): GuardrailResult
         {
             // Simple validation - input must be at least 5 characters
             if (is_string($input) && strlen($input) < 5) {
                 return GuardrailResult::fail('Input must be at least 5 characters', 400);
             }
-            
+
             return GuardrailResult::pass();
         }
     };
@@ -61,21 +63,22 @@ test('guardrail can detect invalid input', function () {
 
 test('guardrail can be created with name', function () {
     // Create a custom guardrail class with public name property for testing
-    $guardrail = new class('profanity_filter') extends Guardrail {
+    $guardrail = new class('profanity_filter') extends Guardrail
+    {
         public string $testName;
-        
+
         public function __construct(string $name)
         {
             $this->name = $name;
             $this->testName = $name;
         }
-        
+
         public function check($input, AgentContext $context): GuardrailResult
         {
             return GuardrailResult::pass();
         }
     };
-    
+
     expect($guardrail)->toBeInstanceOf(Guardrail::class)
         ->and($guardrail->testName)->toBe('profanity_filter');
-}); 
+});

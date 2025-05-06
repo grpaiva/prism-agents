@@ -6,7 +6,6 @@ use Grpaiva\PrismAgents\Models\AgentTrace;
 use Grpaiva\PrismAgents\Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\DB;
 
 class AgentTraceTest extends TestCase
 {
@@ -33,9 +32,9 @@ class AgentTraceTest extends TestCase
         // Set a custom connection in config
         Config::set('prism-agents.tracing.connection', 'testdb');
 
-        $trace = new AgentTrace();
+        $trace = new AgentTrace;
         $trace->id = 'test-id';
-        
+
         // Just test that the model is using the correct connection name
         // without actually trying to save it to the database
         $this->assertEquals('testdb', $trace->getConnectionName());
@@ -106,7 +105,7 @@ class AgentTraceTest extends TestCase
             'type' => 'llm_step',
             'metadata' => [
                 'step_index' => 0,
-                'tools' => ['tool1', 'tool2']
+                'tools' => ['tool1', 'tool2'],
             ],
         ]);
         $step->saveQuietly();
@@ -120,7 +119,7 @@ class AgentTraceTest extends TestCase
             'type' => 'handoff',
             'metadata' => [
                 'tool_name' => 'tool1',
-                'result' => 'Result from tool1'
+                'result' => 'Result from tool1',
             ],
         ]);
         $handoff1->saveQuietly();
@@ -133,7 +132,7 @@ class AgentTraceTest extends TestCase
             'type' => 'handoff',
             'metadata' => [
                 'tool_name' => 'tool2',
-                'result' => 'Result from tool2'
+                'result' => 'Result from tool2',
             ],
         ]);
         $handoff2->saveQuietly();
@@ -155,11 +154,11 @@ class AgentTraceTest extends TestCase
         $this->assertCount(2, $step->handoffs);
         $this->assertTrue($step->hasHandoffs());
         $this->assertEquals(2, $step->handoff_count);
-        
+
         // Test tool calls relationship
         $this->assertCount(1, $step->toolCalls);
         $this->assertEquals(1, $step->tool_call_count);
-        
+
         // Verify the handoffs are the right ones
         $handoffIds = $step->handoffs->pluck('id')->toArray();
         $this->assertContains('handoff-1', $handoffIds);
@@ -367,7 +366,7 @@ class AgentTraceTest extends TestCase
             'name' => 'handoff_1',
             'type' => 'handoff',
             'metadata' => [
-                'tool_name' => 'spanish_agent'
+                'tool_name' => 'spanish_agent',
             ],
         ]);
         $this->assertEquals('spanish_agent', $handoff->display_name);
@@ -381,7 +380,7 @@ class AgentTraceTest extends TestCase
             'name' => 'step_0',
             'type' => 'llm_step',
             'metadata' => [
-                'step_index' => 2
+                'step_index' => 2,
             ],
         ]);
         $this->assertEquals(2, $step->step_index);
@@ -402,7 +401,7 @@ class AgentTraceTest extends TestCase
             'id' => 'handoff-id',
             'type' => 'handoff',
             'metadata' => [
-                'tool_name' => 'french_agent'
+                'tool_name' => 'french_agent',
             ],
         ]);
         $this->assertEquals('french_agent', $handoff->handoff_target);
@@ -546,7 +545,7 @@ class AgentTraceTest extends TestCase
         $this->assertTrue($hierarchy[1]['visible']); // Child 1 is visible
         $this->assertTrue($hierarchy[2]['visible']); // Grandchild is visible
         $this->assertTrue($hierarchy[3]['visible']); // Child 2 is visible
-        
+
         // Verify the other hierarchy is not included
         $hierarchyIds = collect($hierarchy)->pluck('model.id')->toArray();
         $this->assertNotContains('other-root-id', $hierarchyIds);
@@ -623,4 +622,4 @@ class AgentTraceTest extends TestCase
         ]);
         $this->assertEquals('unknown', $trace->status_value);
     }
-} 
+}

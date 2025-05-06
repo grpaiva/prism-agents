@@ -3,12 +3,12 @@
 namespace Grpaiva\PrismAgents\Tests;
 
 use Grpaiva\PrismAgents\PrismAgentsServiceProvider;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-use Orchestra\Testbench\TestCase as Orchestra;
 use Mockery as m;
+use Orchestra\Testbench\TestCase as Orchestra;
 use Prism\Prism\PrismManager;
 use Prism\Prism\Providers\OpenAI\OpenAI;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class TestCase extends Orchestra
 {
@@ -44,19 +44,18 @@ class TestCase extends Orchestra
                         'index' => 0,
                         'message' => [
                             'role' => 'assistant',
-                            'content' => 'This is a mocked response from the AI.'
+                            'content' => 'This is a mocked response from the AI.',
                         ],
-                        'finish_reason' => 'stop'
-                    ]
+                        'finish_reason' => 'stop',
+                    ],
                 ],
                 'usage' => [
                     'prompt_tokens' => 50,
                     'completion_tokens' => 20,
-                    'total_tokens' => 70
-                ]
-            ], 200)
+                    'total_tokens' => 70,
+                ],
+            ], 200),
         ]);
-
 
         // Create a mock PrismManager that returns the mocked provider
         $prismManager = m::mock(PrismManager::class);
@@ -75,8 +74,8 @@ class TestCase extends Orchestra
     protected function defineDatabaseMigrations()
     {
         // Run the package migration
-        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
-        
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
         // Migration to create the required table for tests
         $this->artisan('migrate', ['--database' => 'testbench'])->run();
     }
@@ -92,22 +91,22 @@ class TestCase extends Orchestra
         // Setup default database to use in-memory sqlite
         $app['config']->set('database.default', 'testbench');
         $app['config']->set('database.connections.testbench', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => ':memory:',
-            'prefix'   => '',
+            'prefix' => '',
         ]);
-        
+
         // Set up a dummy connection for connection tests
         $app['config']->set('database.connections.testdb', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => ':memory:',
-            'prefix'   => '',
+            'prefix' => '',
         ]);
-        
+
         // Set up your package configs here
         $app['config']->set('prism-agents.tracing.enabled', true);
         $app['config']->set('prism-agents.tracing.table', 'prism_agent_traces');
-        
+
         // Set up Prism config
         $app['config']->set('prism', [
             'default' => 'openai',
@@ -117,8 +116,8 @@ class TestCase extends Orchestra
                     'url' => 'https://api.openai.com/v1',
                     'organization' => null,
                     'project' => null,
-                ]
-            ]
+                ],
+            ],
         ]);
     }
-} 
+}

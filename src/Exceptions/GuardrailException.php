@@ -8,20 +8,13 @@ class GuardrailException extends Exception
 {
     /**
      * Additional data
-     *
-     * @var array
      */
     protected array $data;
 
     /**
      * Create a new GuardrailException instance
-     *
-     * @param string $message
-     * @param int $code
-     * @param array $data
-     * @param \Throwable|null $previous
      */
-    public function __construct(string $message = "", int $code = 0, array $data = [], \Throwable $previous = null)
+    public function __construct(string $message = '', int $code = 0, array $data = [], ?\Throwable $previous = null)
     {
         parent::__construct($message, $code, $previous);
         $this->data = $data;
@@ -29,8 +22,6 @@ class GuardrailException extends Exception
 
     /**
      * Get additional data
-     *
-     * @return array
      */
     public function getData(): array
     {

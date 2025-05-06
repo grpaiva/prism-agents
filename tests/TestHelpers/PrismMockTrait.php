@@ -2,9 +2,9 @@
 
 namespace Grpaiva\PrismAgents\Tests\TestHelpers;
 
-use Mockery as m;
-use Grpaiva\PrismAgents\PrismAgents;
 use Grpaiva\PrismAgents\AgentResult;
+use Grpaiva\PrismAgents\PrismAgents;
+use Mockery as m;
 
 /**
  * Trait for mocking Prism and PrismAgents classes in tests
@@ -21,20 +21,20 @@ trait PrismMockTrait
             'usage' => [
                 'input_tokens' => 50,
                 'output_tokens' => 20,
-                'total_tokens' => 70
-            ]
+                'total_tokens' => 70,
+            ],
         ]);
-        
+
         // Create a mock Prism manager that returns the mocked provider
         $prismManager = m::mock('Prism\Prism\PrismManager');
         $prismManager->shouldReceive('provider')->andReturn($openaiProvider);
-        
+
         // Bind the mocked manager to the container
         app()->instance('Prism\Prism\PrismManager', $prismManager);
-        
+
         return $prismManager;
     }
-    
+
     protected function mockPrismAgents()
     {
         // This will mock the PrismAgents class to avoid actually running the agent
@@ -46,28 +46,28 @@ trait PrismMockTrait
                 ->shouldReceive('getToolResults')->andReturn([])
                 ->getMock()
         );
-        
+
         app()->instance('Grpaiva\PrismAgents\PrismAgents', $prismAgents);
-        
+
         return $prismAgents;
     }
-    
+
     /**
      * Helper to create a mock PrismAgents with configurable behavior
      */
     protected function createMockPrismAgents()
     {
         $mock = m::mock(PrismAgents::class);
-        
+
         // Set up default behavior for run
         $agentResult = m::mock(AgentResult::class);
         $agentResult->shouldReceive('getOutput')->andReturn('Mocked agent response');
         $agentResult->shouldReceive('getTokensUsed')->andReturn(70);
         $agentResult->shouldReceive('getToolResults')->andReturn([]);
         $agentResult->shouldReceive('withTrace')->andReturnSelf();
-        
+
         $mock->shouldReceive('run')->andReturn($agentResult);
-        
+
         return $mock;
     }
-} 
+}

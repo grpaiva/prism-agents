@@ -50,12 +50,12 @@ class PrismAgentsServiceProvider extends ServiceProvider
 
         // Load the configuration
         $this->mergeConfigFrom(__DIR__.'/../config/config.php', 'prism-agents');
-        
+
         // Register routes
         if (config('prism-agents.ui.enabled', true)) {
             $this->loadRoutesFrom(__DIR__.'/Http/routes.php');
         }
-        
+
         // Register views
         $this->loadViewsFrom(__DIR__.'/../resources/views/prism-agents', 'prism-agents');
     }
@@ -70,7 +70,8 @@ class PrismAgentsServiceProvider extends ServiceProvider
 
         // Since PrismAgents now uses static methods, we only need to register the facade
         $this->app->singleton('prism-agents', function () {
-            return new class {
+            return new class
+            {
                 // Forward method calls to the PrismAgents class
                 public function __call($method, $args)
                 {

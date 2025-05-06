@@ -14,18 +14,16 @@ use Illuminate\Support\Facades\Facade;
  * @method static Trace trace(?string $traceId = null)
  * @method static AgentContext context(array $data = [], ?AgentContext $parent = null)
  * @method static \Prism\Prism\Enums\Provider mapProvider(string $provider)
- * 
+ *
  * @see \Grpaiva\PrismAgents\PrismAgents
  */
 class PrismAgents extends Facade
 {
     /**
      * Get the registered name of the component.
-     *
-     * @return string
      */
     protected static function getFacadeAccessor(): string
     {
         return 'prism-agents';
     }
-} 
+}

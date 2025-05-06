@@ -1,12 +1,9 @@
 <?php
 
 use Grpaiva\PrismAgents\Agent;
-use Grpaiva\PrismAgents\PrismAgents;
-use Prism\Prism\Enums\Provider;
-use Grpaiva\PrismAgents\AgentResult;
 use Grpaiva\PrismAgents\Tests\TestHelpers\MocksTrait;
 use Grpaiva\PrismAgents\Tests\TestHelpers\PrismMockTrait;
-use Mockery as m;
+use Prism\Prism\Enums\Provider;
 
 uses(MocksTrait::class, PrismMockTrait::class);
 
@@ -43,11 +40,11 @@ test('multi-agent orchestration structure is properly created', function () {
 
     // Create an orchestrator agent
     $orchestratorAgent = Agent::as('orchestrator_agent')
-        ->withInstructions("You are a translation agent. Use the tools given to you to translate.")
+        ->withInstructions('You are a translation agent. Use the tools given to you to translate.')
         ->using(Provider::OpenAI, 'gpt-4.1')
         ->withTools([
             $spanishAgent->asTool(),
-            $frenchAgent->asTool()
+            $frenchAgent->asTool(),
         ]);
 
     // Test that the orchestrator agent has both translation agents as tools
