@@ -68,11 +68,11 @@ class Runner
      * Run an agent with the given input
      *
      * @param Agent $agent
-     * @param string|array $input
+     * @param string|array|AgentResult $input
      * @param AgentContext|null $context
      * @return AgentResult
      */
-    public function runAgent(Agent $agent, $input, ?AgentContext $context = null): AgentResult
+    public function runAgent(Agent $agent, string|array|AgentResult $input, ?AgentContext $context = null): AgentResult
     {
         // Create a context if none is provided
         $context = $context ?? AgentContext::as('runner_context');
@@ -94,7 +94,7 @@ class Runner
                     $prismTools[] = $tool;
                 }
             }
-            
+
             // Build a Prism request using the agent's configuration
             $combinedSystemPrompt = self::DEFAULT_SYSTEM_MESSAGE . "\n\n" . $agent->getInstructions();
             $prismRequest = Prism::text()
@@ -108,21 +108,44 @@ class Runner
                 );
             }
 
+            // If tools are provided, check for the tool choice
+            $toolChoice = $agent->getToolChoice();
+            if ($tools && $toolChoice) {
+                $prismRequest->withToolChoice($toolChoice);
+            }
+
             // Set maximum steps if specified
-            $maxSteps = $agent->getMaxSteps() ?? $this->maxSteps;
-            if ($maxSteps) {
+            if ($maxSteps = $agent->getMaxSteps() ?? $this->maxSteps) {
                 $prismRequest->withMaxSteps($maxSteps);
             }
 
             // Add client options if specified
-            $clientOptions = $agent->getClientOptions();
-            if ($clientOptions) {
+            if ($clientOptions = $agent->getClientOptions()) {
                 $prismRequest->withClientOptions($clientOptions);
+            }
+
+            // Add client retry options if specified
+            if ($clientRetry = $agent->getClientRetry()) {
+                $prismRequest->withClientRetry($clientRetry);
             }
             
             // Add tools if there are any
             if (!empty($prismTools)) {
                 $prismRequest->withTools($prismTools);
+            }
+
+            // Set max tokens if specified
+            if ($maxTokens = $agent->getMaxTokens()) {
+                $prismRequest->withMaxTokens($maxTokens);
+            }
+
+            // Set temperature and top_p if specified
+            if ($temperature = $agent->getTemperature()) {
+                $prismRequest->usingTemperature($temperature);
+            }
+
+            if ($topP = $agent->getTopP()) {
+                $prismRequest->usingTopP($topP);
             }
             
             // Handle different input types

@@ -2,15 +2,19 @@
 
 namespace Grpaiva\PrismAgents;
 
+use Prism\Prism\Concerns\ConfiguresClient;
+use Prism\Prism\Concerns\ConfiguresGeneration;
 use Prism\Prism\Concerns\ConfiguresModels;
 use Prism\Prism\Concerns\ConfiguresProviders;
+use Prism\Prism\Concerns\ConfiguresTools;
 use Prism\Prism\Concerns\HasTools;
 use Prism\Prism\Enums\Provider;
+use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Tool;
 
 class Agent
 {
-    use HasTools, ConfiguresProviders, ConfiguresModels;
+    use HasTools, ConfiguresClient, ConfiguresGeneration, ConfiguresModels, ConfiguresProviders, ConfiguresTools;
 
     /**
      * The unique name of the agent
@@ -39,20 +43,6 @@ class Agent
      * @var array
      */
     protected array $inputGuardrails = [];
-
-    /**
-     * Client options for the agent
-     *
-     * @var array
-     */
-    protected array $clientOptions = [];
-
-    /**
-     * Maximum number of steps for agent to take
-     * 
-     * @var int|null
-     */
-    protected ?int $maxSteps = null;
 
     /**
      * Protected constructor to enforce use of static factory methods
@@ -106,27 +96,6 @@ class Agent
     public function withInputGuardrails(array $guardrails): self
     {
         $this->inputGuardrails = $guardrails;
-        return $this;
-    }
-
-    /**
-     * Set maximum number of steps
-     * 
-     * @param int $steps
-     * @return $this
-     */
-    public function withMaxSteps(int $steps): self
-    {
-        $this->maxSteps = $steps;
-        return $this;
-    }
-
-    /**
-     * Set client options
-     */
-    public function withClientOptions(array $options): self
-    {
-        $this->clientOptions = $options;
         return $this;
     }
 
@@ -187,7 +156,7 @@ class Agent
      */
     public function getProvider(): Provider
     {
-        return $this->provider;
+        return Provider::from($this->providerKey);
     }
 
     /**
@@ -209,7 +178,6 @@ class Agent
     {
         return $this->inputGuardrails;
     }
-
 
     /**
      * Get the model
@@ -240,4 +208,55 @@ class Agent
     {
         return $this->clientOptions;
     }
+
+    /**
+     * Get client retry options
+     *
+     * @return array
+     */
+    public function getClientRetry(): array
+    {
+        return $this->clientRetry;
+    }
+
+    /**
+     * Get the max tokens
+     *
+     * @return int|null
+     */
+    public function getMaxTokens(): ?int
+    {
+        return $this->maxTokens;
+    }
+
+    /**
+     * Get the temperature
+     *
+     * @return float|null
+     */
+    public function getTemperature(): ?float
+    {
+        return $this->temperature;
+    }
+
+    /**
+     * Get the top P
+     *
+     * @return float|null
+     */
+    public function getTopP(): ?float
+    {
+        return $this->topP;
+    }
+
+    /**
+     * Get the tool choice
+     *
+     * @return string|ToolChoice|null
+     */
+    public function getToolChoice(): string|ToolChoice|null
+    {
+        return $this->toolChoice;
+    }
+
 } 
