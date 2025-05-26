@@ -1,6 +1,5 @@
 {
     "name": "grpaiva/prism-agents",
-    "version": "0.0.1",
     "description": "Adds agents abstraction to Prism along with tracing",
     "keywords": [
         "grpaiva",
