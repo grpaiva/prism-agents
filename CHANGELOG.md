@@ -2,6 +2,12 @@
 
 All notable changes to `prism-agents` will be documented in this file
 
-## 1.0.0 - 201X-XX-XX
+## 0.0.1 - 2024-12-19
 
-- initial release
+- Initial release
+- Agent framework for Laravel & Prism PHP
+- Support for OpenAI Agents SDK-like functionality
+- Tools integration with Prism PHP
+- Agent handoffs and multi-agent orchestration
+- Tracing capabilities
+- Laravel service provider and facades
